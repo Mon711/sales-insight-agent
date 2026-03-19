@@ -8,7 +8,7 @@ Currently working on the data cleaning step (extract product families).
 import sys
 from data_loader import ShopifyDataLoader
 from data_cleaner import add_product_family, calculate_product_sales, calculate_store_metrics
-from report_generator import generate_sales_report
+from json_output import generate_analysis_json
 
 
 def main(csv_path=None):
@@ -60,15 +60,15 @@ def main(csv_path=None):
         print(top_10.to_string(index=False))
         print()
 
-        # Generate and save the markdown report
+        # Generate and save the JSON analysis file
         print("=" * 50)
-        print("Generating Sales Insight Report...")
+        print("Generating LLM-Ready Analysis JSON...")
         print("=" * 50)
-        report_content = generate_sales_report(store_metrics, sales_summary)
-        print(f"\nReport saved to: reports/sales_insight_report.md")
-        print("\nReport Preview:")
+        json_content = generate_analysis_json(store_metrics, sales_summary)
+        print(f"\nAnalysis saved to: analysis_summary.json")
+        print("\nJSON Output:")
         print("-" * 50)
-        print(report_content)
+        print(json_content)
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
