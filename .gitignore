@@ -37,8 +37,9 @@ wheels/
 data/raw/*.csv
 data/processed/*.csv
 
-# Generated Reports
+# Generated Reports and Analysis
 reports/*.md
+analysis_summary.json
 
 # Python virtual environment
 .venv/
