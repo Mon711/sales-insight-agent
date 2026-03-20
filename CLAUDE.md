@@ -4,16 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Sales Insight Agent for Shopify data (Version 1). The agent loads Shopify order exports and generates sales insights and marketing opportunities.
+**Sales Insight Agent for Shopify — AI-Powered Reporting Foundation**
 
-### Development Goals for Version 1
+This project builds a reliable, trustworthy Shopify data pipeline that fetches live store data, filters it correctly, and structures it for AI analysis. The goal is to enable Claude (and future agents) to generate rich, context-aware business insights and reports.
 
-1. Load Shopify order export data (CSV)
-2. Clean product names and group size variants
-3. Calculate units sold per product
-4. Estimate product revenue using line item price × quantity
-5. Calculate total store revenue
-6. Generate markdown report with sales insights and marketing opportunities
+This is NOT about generating fixed-template reports. **It's about preparing clean, structured data that an AI can analyze deeply.**
+
+### Long-term Vision
+
+- **Phase 1 (current):** Build a reliable Shopify data pipeline with proper business filtering
+- **Phase 2:** Integrate Claude API to generate AI-powered insights
+- **Phase 3:** Extend to a broader agent/data foundation for multiple e-commerce roles (marketing manager agent, product manager agent, etc.)
+
+### Key Business Principles
+
+- **Data accuracy first.** Not all order-like records are real revenue. We must correctly filter test orders, cancelled orders, draft orders, internal transfers, etc.
+- **Channel awareness.** Different sales channels (website, POS, wholesale, dropship) have different characteristics and need separate analysis.
+- **AI-driven insights.** The pipeline's value is in providing trustworthy data, not hardcoded rules. Claude will do the analysis.
 
 ## Running the Project
 
@@ -23,57 +30,107 @@ Sales Insight Agent for Shopify data (Version 1). The agent loads Shopify order 
 pip install -r requirements.txt
 ```
 
-### Loading and Inspecting Data
+### Environment Variables
 
-The main script is in `src/main.py`. To run it with your Shopify CSV:
+Create a `.env` file (or export these in your shell):
 
 ```bash
-# Option 1: Place CSV at data/raw/orders.csv (default location)
-python src/main.py
-
-# Option 2: Pass CSV path as argument
-python src/main.py data/raw/your_file.csv
+SHOPIFY_SHOP_NAME=your-shop-name
+SHOPIFY_ACCESS_TOKEN=your-access-token
 ```
 
-The script will print:
-- Total row count
-- Column names
-- First 5 rows of data
+### Running the Pipeline
+
+```bash
+python src/main.py
+```
+
+This will:
+1. Fetch live orders from Shopify API
+2. Apply business filters (exclude test orders, etc.)
+3. Calculate metrics (revenue, units sold, by-channel breakdown)
+4. Output structured data for analysis
 
 ## Important Rules
 
+### No Hardcoded Secrets
+- **Never hardcode API credentials, access tokens, or shop names.**
+- Always read from environment variables: `SHOPIFY_SHOP_NAME`, `SHOPIFY_ACCESS_TOKEN`
+- `.env` files are in `.gitignore` — safe to use locally
+
+### Correct Filtering is Critical
+- Test orders, draft orders, cancelled orders, and refunds must be handled correctly
+- Document why we exclude each type of record
+- When in doubt, include the record and let the AI decide its relevance
+
 ### No Sample Data
-**Never create fake sample data unless explicitly asked.** The user provides real Shopify export files. Always work with the actual data they supply in `data/raw/`.
-
-### File Structure
-
-- `src/` - source code
-- `data/raw/` - input CSV files (user-provided Shopify exports)
-- `data/processed/` - cleaned/processed data (future)
-- `tests/` - test files (future)
+**Never create fake Shopify order data unless explicitly asked.** We fetch from the real live store.
 
 ## Architecture Notes
 
-The project uses a simple, modular approach:
+The pipeline is divided into **clear layers** that separate concerns:
 
-- **ShopifyDataLoader** (`src/data_loader.py`) - Simple CSV loader that reads files without assuming column names. This flexibility allows us to inspect the actual structure before deciding which columns we need.
+### Layer 1: Data Fetching
+- **`shopify_client.py`** - GraphQL client that authenticates to Shopify and fetches live orders
+- Returns raw order data from the API (no filtering yet)
+- Handles pagination and errors
 
-- **main.py** - Entry point that calls the loader and displays basic information (row count, columns, first rows).
+### Layer 2: Business Filtering
+- **`shopify_filters.py`** - Pure functions that apply business rules
+- Examples: `exclude_test_orders()`, `exclude_cancelled()`, `filter_by_channel()`, etc.
+- Each filter is independent and composable
+- Input: raw orders; Output: clean, trustworthy orders
 
-Currently, the loader intentionally does NOT:
-- Assume specific column names exist
-- Perform type conversion
-- Clean or validate data
+### Layer 3: Metrics & Structuring
+- **`metrics_analyzer.py`** - Calculates structured metrics from cleaned orders
+- Output: a clean dictionary/JSON with:
+  - Total revenue, order count, currency
+  - Breakdown by channel (website, POS, wholesale, etc.)
+  - Top products (by units, revenue)
+  - Data quality notes (what was excluded and why)
+- **This is the product.** This clean data goes to AI for analysis.
 
-We inspect the actual CSV structure first, then add processing steps incrementally.
+### Layer 4: AI Analysis (Manual - Not In-Repo Yet)
+- **Not yet automated in this repo.** Currently, you export the structured metrics and use Claude manually in your workflow.
+- You take the JSON metrics and ask Claude to analyze them, generate insights, identify anomalies, and provide recommendations.
+- This ensures you control the analysis, can iterate, and understand the reasoning.
+- Future: May integrate Claude API directly into the repo, but not the current priority.
+
+### Deprecated Components
+The following are **no longer used** and should be removed once Step 3 is complete:
+- `src/data_loader.py` — Was for CSV files; replaced by `shopify_client.py`
+- `src/data_cleaner.py` — Was for CSV processing; replaced by `shopify_filters.py`
+- `src/report_generator.py` — Was hardcoded template; replaced by AI analysis
 
 ## Development Workflow
 
-Focus on one feature at a time:
-1. Data loading ✓ (current)
-2. Data inspection (current - inspecting user's real file)
-3. Data cleaning (next)
-4. Analysis and calculations
-5. Report generation
+Build the pipeline in this order:
 
-This incremental approach helps learn pandas step-by-step and catch issues early.
+1. **Step 1: Data Fetching** ✓ (done)
+   - `shopify_client.py` — Fetch orders from Shopify API
+   - GraphQL query validated against Shopify schema
+   - Handles pagination automatically
+
+2. **Step 2: Business Filtering** ✓ (done)
+   - `shopify_filters.py` — Apply business rules to identify "real revenue"
+   - Currently active filters (Tier 1 - safe, always-on):
+     - Exclude test orders (`test == True`)
+     - Exclude cancelled orders (`cancelledAt != null`)
+   - Future filters (Tier 2 - documented, waiting for business decisions):
+     - Payment status (partially paid vs fully paid?)
+     - Fulfillment status (unshipped vs shipped?)
+     - Channel filtering (which channels are real revenue?)
+     - Draft/internal orders (how to identify?)
+     - Refund handling (how to account for refunds?)
+
+3. **Step 3: Metrics & Structuring** (next)
+   - `metrics_analyzer.py` — Calculate clean metrics from filtered orders
+   - Output: JSON with revenue, units sold, by-channel breakdown, data quality notes
+   - This is the product we pass to Claude for analysis
+
+4. **Step 4: AI Analysis** (future - manual for now)
+   - Export the structured metrics
+   - Use Claude to analyze and generate insights
+   - May automate in-repo later if it makes sense
+
+Each step validates that the previous layer works correctly before moving forward.

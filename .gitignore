@@ -44,6 +44,10 @@ analysis_summary.json
 # Python virtual environment
 .venv/
 
+# Environment variables (never commit secrets)
+.env
+.env.local
+
 # Cache and temporary files
 .cache/
 *.tmp
