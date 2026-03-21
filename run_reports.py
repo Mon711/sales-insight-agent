@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Test script for ShopifyQL channel reports.
+Fetch ShopifyQL channel reports and save as JSON.
 
 Usage:
-    python test_channel_reports.py
+    python run_reports.py
 
-Runs four checks:
-1. API connection
-2. Channel discovery (shows all sales_channel values in the store)
-3. All four channel reports
-4. Prints a clean summary
+Execution flow:
+1. Connect to Shopify API
+2. Channel discovery — list all sales_channel values in store
+3. Fetch reports for all four channels (online_store, pos, wholesale, dropship)
+4. Save JSON output to Downloads folder
 """
 
 import json
@@ -48,12 +48,14 @@ def main():
         print(f"✗ Report generation failed: {e}")
         sys.exit(1)
 
-    # Step 4: Print full JSON output
-    print("\n[STEP 4] Full report output (JSON):")
-    print(json.dumps(all_reports, indent=2, default=str))
+    # Step 4: Write JSON output to Downloads
+    output_path = f"/Users/mrinalsood/Downloads/channel_reports_{REPORT_SINCE}_to_{REPORT_UNTIL}.json"
+    with open(output_path, "w") as f:
+        json.dump(all_reports, f, indent=2, default=str)
 
     print("\n" + "=" * 60)
     print(f"✓ Done — {len(all_reports)} channel reports generated")
+    print(f"✓ Output saved to: {output_path}")
     print("=" * 60)
 
 
