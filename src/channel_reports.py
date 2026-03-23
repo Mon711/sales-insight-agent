@@ -21,11 +21,7 @@ Excluded order types (not real revenue):
 
 from typing import Dict, Any, List
 from .shopify_client import ShopifyGraphQLClient
-
-
-# Date range for reports — full month of February 2026
-REPORT_SINCE = "2026-02-01"
-REPORT_UNTIL = "2026-02-28"
+from .config import REPORT_SINCE, REPORT_UNTIL, SUB_CHANNEL_CONFIG
 
 # ShopifyQL query constants per channel
 CHANNEL_QUERIES = {
@@ -70,6 +66,32 @@ CHANNEL_QUERIES = {
         TIMESERIES day
         SINCE {REPORT_SINCE} UNTIL {REPORT_UNTIL}
     """,
+    # TODO: Add dropship sub-channel queries after running discover_channels.py
+    # Once you've confirmed the exact sales_channel names for Mirakl, fabric, and
+    # Maisonette, uncomment and update these queries with the confirmed channel names,
+    # then update src/config.py with the same channel names.
+    #
+    # "dropship_mirakl": f"""
+    #     FROM sales
+    #     SHOW gross_sales, discounts, net_sales, orders
+    #     WHERE sales_channel = 'CONFIRMED_MIRAKL_CHANNEL_NAME'
+    #     TIMESERIES day
+    #     SINCE {REPORT_SINCE} UNTIL {REPORT_UNTIL}
+    # """,
+    # "dropship_fabric": f"""
+    #     FROM sales
+    #     SHOW gross_sales, discounts, net_sales, orders
+    #     WHERE sales_channel = 'CONFIRMED_FABRIC_CHANNEL_NAME'
+    #     TIMESERIES day
+    #     SINCE {REPORT_SINCE} UNTIL {REPORT_UNTIL}
+    # """,
+    # "dropship_maisonette": f"""
+    #     FROM sales
+    #     SHOW gross_sales, discounts, net_sales, orders
+    #     WHERE sales_channel = 'CONFIRMED_MAISONETTE_CHANNEL_NAME'
+    #     TIMESERIES day
+    #     SINCE {REPORT_SINCE} UNTIL {REPORT_UNTIL}
+    # """,
 }
 
 # Discovery query — shows a breakdown of all sales_channel values in the store.
@@ -127,7 +149,10 @@ def run_channel_report(client: ShopifyGraphQLClient, channel_key: str) -> Dict[s
             "total_gross_sales": <float>,
             "total_net_sales": <float>,
             "total_discounts": <float>,
-            "total_orders": <int>
+            "total_orders": <int>,
+            "commission_rate": <float>,
+            "true_net_sales": <float>,
+            "commission_deducted": <float>
         }
     }
     """
@@ -148,11 +173,19 @@ def run_channel_report(client: ShopifyGraphQLClient, channel_key: str) -> Dict[s
     total_discounts = sum(float(row.get("discounts", 0) or 0) for row in rows)
     total_orders = sum(int(row.get("orders", 0) or 0) for row in rows)
 
+    # Get commission rate from config, default to 0% if not found
+    commission_rate = SUB_CHANNEL_CONFIG.get(channel_key, {}).get("commission_rate", 0.0)
+    true_net_sales = total_net_sales * (1 - commission_rate)
+    commission_deducted = total_net_sales - true_net_sales
+
     summary = {
         "total_gross_sales": round(total_gross_sales, 2),
         "total_net_sales": round(total_net_sales, 2),
         "total_discounts": round(total_discounts, 2),
         "total_orders": total_orders,
+        "commission_rate": commission_rate,
+        "true_net_sales": round(true_net_sales, 2),
+        "commission_deducted": round(commission_deducted, 2),
     }
 
     # Wholesale: payment is collected offline so Shopify always records net_sales = $0.
