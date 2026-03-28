@@ -51,3 +51,6 @@ analysis_summary.json
 # Cache and temporary files
 .cache/
 *.tmp
+
+# Resource files
+resources/
