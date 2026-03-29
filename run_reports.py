@@ -1,84 +1,150 @@
 #!/usr/bin/env python3
 """
-Fetch ShopifyQL channel reports and save as JSON.
+The main entry point for the Sales Insight Agent.
 
-Usage:
-    python run_reports.py
-
-Execution flow:
-1. Connect to Shopify API
-2. Channel discovery — list all sales_channel values in store
-3. Fetch reports for all four channels (online_store, pos, wholesale, dropship)
-4. Save JSON output to Downloads folder
+This script orchestrates the entire reporting process:
+1. Connects to Shopify.
+2. Identifies active sales channels.
+3. Fetches detailed product-wise data.
+4. Saves organized JSON files into numbered generation folders.
 """
 
+import os
 import json
 import sys
+import re
 from datetime import datetime, timezone
+
+# We import our specialized tools from the 'src' folder
 from src.shopify_client import ShopifyGraphQLClient
-from src.channel_reports import run_discovery_query, run_all_channel_reports
 from src.product_reports import run_all_product_reports
 from src.config import REPORT_SINCE, REPORT_UNTIL
 
 
+def get_next_generation_dir(base_dir="reports"):
+    """
+    Manages the 'reports/' folder. 
+    It looks at existing folders like 'files_generation_1' and finds the 
+    next available number, filling in any gaps if a folder was deleted.
+    """
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+        return os.path.join(base_dir, "files_generation_1")
+
+    # This regular expression helps us find the numbers in folder names
+    pattern = re.compile(r"^files_generation_(\d+)$")
+    
+    existing_nums = []
+    for d in os.listdir(base_dir):
+        full_path = os.path.join(base_dir, d)
+        if os.path.isdir(full_path):
+            match = pattern.match(d)
+            if match:
+                existing_nums.append(int(match.group(1)))
+
+    # Start at 1 and find the first number that isn't taken
+    next_num = 1
+    if existing_nums:
+        existing_nums.sort()
+        for num in existing_nums:
+            if num == next_num:
+                next_num += 1
+            elif num > next_num:
+                break # We found a gap!
+    
+    return os.path.join(base_dir, f"files_generation_{next_num}")
+
+
 def main():
     print("=" * 60)
-    print(f"ShopifyQL Channel & Product Reports — {REPORT_SINCE} to {REPORT_UNTIL}")
+    print(f"Shopify Sales Insight Agent — {REPORT_SINCE} to {REPORT_UNTIL}")
     print("=" * 60)
 
-    # Step 1: Test connection
+    # --- STEP 0: Create the Output Folder ---
+    gen_dir = get_next_generation_dir()
+    os.makedirs(gen_dir, exist_ok=True)
+    print(f"\n[STEP 0] Saving reports to: {gen_dir}")
+
+    # --- STEP 1: Connect to Shopify ---
     print("\n[STEP 1] Connecting to Shopify...")
     try:
         client = ShopifyGraphQLClient()
-        print(f"✓ Connected to: {client.shop_name}")
+        print(f"✓ Connected to store: {client.shop_name}")
     except Exception as e:
         print(f"✗ Connection failed: {e}")
         sys.exit(1)
 
-    # Step 2: Discovery — verify channel names in store
-    print("\n[STEP 2] Channel breakdown (all sales_channel values in store):")
+    # --- STEP 2: Discovery (Check what channels are active) ---
+    print("\n[STEP 2] Identifying active sales channels...")
     try:
-        run_discovery_query(client)
+        # We ask Shopify for a high-level list of where sales are coming from
+        channels = client.discover_channels(REPORT_SINCE, REPORT_UNTIL)
+        for row in channels:
+            name = row.get("sales_channel", "Unknown")
+            net = float(row.get("net_sales", 0) or 0)
+            print(f"  - {name}: ${net:,.2f} net sales")
     except Exception as e:
-        print(f"✗ Discovery query failed: {e}")
+        print(f"✗ Discovery failed: {e}")
         sys.exit(1)
 
-    # Step 3: Run all channel reports
-    print("\n[STEP 3] Running all channel reports...")
+    # --- STEP 3: Run Product-Wise Reports ---
+    print("\n[STEP 3] Fetching detailed product data...")
     try:
-        all_reports = run_all_channel_reports(client)
-    except Exception as e:
-        print(f"✗ Report generation failed: {e}")
-        sys.exit(1)
-
-    # Step 4: Run all product reports
-    print("\n[STEP 4] Running product reports...")
-    try:
+        # This reaches out to Shopify for every product in every channel
         all_products = run_all_product_reports(client)
-        # Merge top_products into each channel report
-        for channel_key, products in all_products.items():
-            if channel_key in all_reports:
-                all_reports[channel_key]["top_products"] = products
-            else:
-                print(f"  ⚠ Product report for {channel_key} has no matching channel report")
     except Exception as e:
-        print(f"✗ Product report generation failed: {e}")
+        print(f"✗ Product report failed: {e}")
         sys.exit(1)
 
-    # Step 5: Add metadata and write JSON output
-    output = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
-        "channels": all_reports,
-    }
+    # --- STEP 4: Save the Files ---
+    print("\n[STEP 4] Saving individual JSON files...")
+    
+    timestamp = datetime.now(timezone.utc).isoformat()
+    saved_count = 0
 
-    output_path = f"/Users/mrinalsood/Downloads/sales_report_{REPORT_SINCE}_to_{REPORT_UNTIL}.json"
-    with open(output_path, "w") as f:
-        json.dump(output, f, indent=2, default=str)
+    for channel_key, product_rows in all_products.items():
+        if not product_rows:
+            continue
+
+        # Find the 'Summary' row created by the 'WITH TOTALS' command in SQL
+        summary_row = next((row for row in product_rows if row.get("product_title") is None), {})
+        
+        # Prepare a clean summary block for the top of the JSON file
+        summary = {
+            "total_gross_sales": summary_row.get("gross_sales"),
+            "total_net_sales": summary_row.get("net_sales"),
+            "total_sales": summary_row.get("total_sales"),
+            "total_items_sold": summary_row.get("net_items_sold"),
+        }
+        
+        # Special math for Wholesale (estimating revenue at 50% of retail)
+        if channel_key == "wholesale" and summary["total_gross_sales"]:
+            summary["estimated_wholesale_revenue"] = round(float(summary["total_gross_sales"]) / 2, 2)
+
+        # Structure the final data for this specific channel
+        channel_output = {
+            "generated_at": timestamp,
+            "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
+            "channel_name": channel_key,
+            "channel_summary": summary,
+            "product_sales_performance": product_rows
+        }
+
+        # Build the filename and save it
+        safe_name = channel_key.lower().replace(" ", "_")
+        filename = f"report_{safe_name}_{REPORT_SINCE}_to_{REPORT_UNTIL}.json"
+        output_path = os.path.join(gen_dir, filename)
+        
+        try:
+            with open(output_path, "w") as f:
+                json.dump(channel_output, f, indent=2, default=str)
+            print(f"  ✓ Saved: {filename}")
+            saved_count += 1
+        except Exception as e:
+            print(f"  ✗ Failed to save {filename}: {e}")
 
     print("\n" + "=" * 60)
-    print(f"✓ Done — {len(all_reports)} channels with product analysis")
-    print(f"✓ Output saved to: {output_path}")
+    print(f"✓ Success — {saved_count} reports generated in {gen_dir}")
     print("=" * 60)
 
 

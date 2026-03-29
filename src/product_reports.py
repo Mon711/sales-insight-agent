@@ -20,87 +20,85 @@ def build_product_query(
     config: Dict[str, Any],
     since: str,
     until: str,
-    limit: int = 20,
+    limit: int = 1000,
 ) -> str:
     """
     Build a ShopifyQL product query for a specific sub-channel.
 
-    Handles multiple filter types:
-    - sales_channel: single specific channel (most dropship sub-channels)
-    - sales_channel_multi: multiple OR'd channels (online_store)
-    - order_tag: tag-based filtering (wholesale)
-
-    Returns a ShopifyQL query string that GROUPs BY product_title and ranks by net_sales
-    (or gross_sales for wholesale where net_sales = $0).
+    Handles specialized logic for POS and generic logic for others:
+    - POS: Detailed location-based query with total_sales ranking.
+    - Other channels: Standard title/revenue query.
     """
-    filter_type = config.get("filter_type")
+    
+    # 1. Specialized POS query
+    if channel_key == "pos":
+        return f"""
+            FROM sales
+            SHOW 
+                net_items_sold, 
+                gross_sales, 
+                discounts, 
+                returns, 
+                net_sales, 
+                taxes, 
+                total_sales
+            WHERE 
+                is_pos_sale = true 
+                AND line_type = 'product' 
+                AND product_title IS NOT NULL
+            GROUP BY 
+                product_title, 
+                product_type WITH TOTALS
+            SINCE {since} UNTIL {until}
+            ORDER BY 
+                total_sales DESC
+            LIMIT {limit}
+        """
 
-    # Shared columns and base structure
+    # 2. Generic query logic for other channels
+    filter_type = config.get("filter_type")
+    
+    # Define fields and sorting
+    # We use a consistent set of fields across all channels for better AI analysis
+    show_clause = "product_title, product_vendor, product_type, net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
+    
     if channel_key == "wholesale":
-        # Wholesale: rank by gross_sales since net_sales = $0
-        show_clause = "product_title, gross_sales, net_sales, orders"
         order_by = "gross_sales DESC"
     else:
-        show_clause = "product_title, gross_sales, net_sales, orders"
-        order_by = "net_sales DESC"
+        order_by = "total_sales DESC"
 
+    # Define the WHERE clause based on filter_type
     if filter_type == "sales_channel":
-        # Single channel
         channel = config.get("shopify_channel")
         if not channel:
-            raise ValueError(f"Channel {channel_key} has no shopify_channel defined. Run discovery query first.")
-
-        query = f"""
-            FROM sales
-            SHOW {show_clause}
-            WHERE sales_channel = '{channel}'
-            GROUP BY product_title
-            SINCE {since} UNTIL {until}
-            ORDER BY {order_by}
-            LIMIT {limit}
-        """
+            raise ValueError(f"Channel {channel_key} has no shopify_channel defined.")
+        where_clause = f"sales_channel = '{channel}' AND line_type = 'product' AND product_title IS NOT NULL"
 
     elif filter_type == "sales_channel_multi":
-        # Multiple channels with OR logic (online_store)
         channels = config.get("shopify_channels", [])
         exclude_tags = config.get("exclude_tags", [])
-
-        # Build WHERE clause: (channel1 OR channel2 OR ...) AND NOT exclude_tags
         channel_conditions = " OR ".join([f"sales_channel = '{ch}'" for ch in channels])
         exclude_conditions = " AND ".join([f"order_tags NOT CONTAINS '{tag}'" for tag in exclude_tags])
-
-        where_clause = f"({channel_conditions}) AND {exclude_conditions}" if exclude_conditions else channel_conditions
-
-        query = f"""
-            FROM sales
-            SHOW {show_clause}
-            WHERE {where_clause}
-            GROUP BY product_title
-            SINCE {since} UNTIL {until}
-            ORDER BY {order_by}
-            LIMIT {limit}
-        """
+        where_clause = f"({channel_conditions}) AND {exclude_conditions} AND line_type = 'product' AND product_title IS NOT NULL" if exclude_conditions else f"({channel_conditions}) AND line_type = 'product' AND product_title IS NOT NULL"
 
     elif filter_type == "order_tag":
-        # Tag-based filtering (wholesale)
         tag = config.get("tag")
         if not tag:
             raise ValueError(f"Channel {channel_key} has no tag defined.")
-
-        query = f"""
-            FROM sales
-            SHOW {show_clause}
-            WHERE order_tags CONTAINS '{tag}'
-            GROUP BY product_title
-            SINCE {since} UNTIL {until}
-            ORDER BY {order_by}
-            LIMIT {limit}
-        """
+        where_clause = f"order_tags CONTAINS '{tag}' AND line_type = 'product' AND product_title IS NOT NULL"
 
     else:
         raise ValueError(f"Unknown filter_type: {filter_type} for channel {channel_key}")
 
-    return query
+    return f"""
+        FROM sales
+        SHOW {show_clause}
+        WHERE {where_clause}
+        GROUP BY product_title, product_vendor, product_type WITH TOTALS
+        SINCE {since} UNTIL {until}
+        ORDER BY {order_by}
+        LIMIT {limit}
+    """
 
 
 def parse_product_rows(response: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -114,22 +112,10 @@ def run_product_report(
     config: Dict[str, Any],
     since: str = REPORT_SINCE,
     until: str = REPORT_UNTIL,
-    limit: int = 20,
+    limit: int = 1000,
 ) -> List[Dict[str, Any]]:
     """
     Fetch and parse top products for a specific sub-channel.
-
-    Args:
-        client: Shopify GraphQL client
-        channel_key: Sub-channel identifier (e.g., "online_store", "dropship_mirakl")
-        config: Sub-channel config dict from SUB_CHANNEL_CONFIG
-        since: Report start date
-        until: Report end date
-        limit: Max number of top products to fetch
-
-    Returns:
-        List of product dicts with keys: product_title, gross_sales, net_sales, orders, true_net_sales
-        Returns empty list if query fails (logs error, doesn't crash).
     """
     try:
         query = build_product_query(channel_key, config, since, until, limit)
@@ -162,29 +148,10 @@ def run_all_product_reports(
     client: ShopifyGraphQLClient,
     since: str = REPORT_SINCE,
     until: str = REPORT_UNTIL,
-    limit: int = 20,
+    limit: int = 1000,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Fetch product reports for all active sub-channels.
-
-    Returns a dict keyed by channel_key, each containing a list of top products.
-    If a channel has an error, that channel is skipped (but others continue).
-
-    Example return value:
-    {
-        "online_store": [
-            {
-                "product_title": "Product A",
-                "gross_sales": 900.0,
-                "net_sales": 850.0,
-                "orders": 7,
-                "true_net_sales": 850.0  # 0% commission
-            },
-            ...
-        ],
-        "pos": [...],
-        ...
-    }
     """
     print(f"\n[PRODUCTS] Fetching top products by sub-channel ({since} → {until})...")
 

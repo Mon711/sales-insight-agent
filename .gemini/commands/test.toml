@@ -1,0 +1,7 @@
+description = "Run the channel reports test suite"
+prompt = """
+Execute the following command to run the channel reports test suite:
+!{python test_channel_reports.py}
+
+Analyze the output and summarize the results of the channel reports.
+"""

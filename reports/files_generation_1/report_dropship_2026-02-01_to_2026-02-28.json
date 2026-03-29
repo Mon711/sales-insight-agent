@@ -1,0 +1,216 @@
+{
+  "generated_at": "2026-03-28T14:44:48.069645+00:00",
+  "report_period": {
+    "since": "2026-02-01",
+    "until": "2026-02-28"
+  },
+  "channel_name": "dropship",
+  "summary": {
+    "total_gross_sales": 31946.0,
+    "total_net_sales": 11389.3,
+    "total_discounts": -29.7,
+    "total_orders": 147,
+    "commission_rate": 0.0,
+    "true_net_sales": 11389.3,
+    "commission_deducted": 0.0
+  },
+  "product_sales_performance": [],
+  "daily_sales_trends": [
+    {
+      "day": "2026-02-01",
+      "gross_sales": "1609.8",
+      "discounts": "0",
+      "net_sales": "1309.8",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-02",
+      "gross_sales": "1094",
+      "discounts": "0",
+      "net_sales": "348",
+      "orders": "4"
+    },
+    {
+      "day": "2026-02-03",
+      "gross_sales": "226.8",
+      "discounts": "0",
+      "net_sales": "-919.3",
+      "orders": "1"
+    },
+    {
+      "day": "2026-02-04",
+      "gross_sales": "0",
+      "discounts": "0",
+      "net_sales": "-999",
+      "orders": "0"
+    },
+    {
+      "day": "2026-02-05",
+      "gross_sales": "0",
+      "discounts": "0",
+      "net_sales": "-698",
+      "orders": "0"
+    },
+    {
+      "day": "2026-02-06",
+      "gross_sales": "220",
+      "discounts": "0",
+      "net_sales": "-681",
+      "orders": "2"
+    },
+    {
+      "day": "2026-02-07",
+      "gross_sales": "2090",
+      "discounts": "-29.7",
+      "net_sales": "1664.3",
+      "orders": "8"
+    },
+    {
+      "day": "2026-02-08",
+      "gross_sales": "1479.8",
+      "discounts": "0",
+      "net_sales": "1479.8",
+      "orders": "5"
+    },
+    {
+      "day": "2026-02-09",
+      "gross_sales": "901",
+      "discounts": "0",
+      "net_sales": "223",
+      "orders": "4"
+    },
+    {
+      "day": "2026-02-10",
+      "gross_sales": "2500",
+      "discounts": "0",
+      "net_sales": "1541",
+      "orders": "9"
+    },
+    {
+      "day": "2026-02-11",
+      "gross_sales": "896",
+      "discounts": "0",
+      "net_sales": "721",
+      "orders": "5"
+    },
+    {
+      "day": "2026-02-12",
+      "gross_sales": "301.8",
+      "discounts": "0",
+      "net_sales": "-1413.2",
+      "orders": "2"
+    },
+    {
+      "day": "2026-02-13",
+      "gross_sales": "658",
+      "discounts": "0",
+      "net_sales": "-438.6",
+      "orders": "2"
+    },
+    {
+      "day": "2026-02-14",
+      "gross_sales": "1875.8",
+      "discounts": "0",
+      "net_sales": "820.8",
+      "orders": "9"
+    },
+    {
+      "day": "2026-02-15",
+      "gross_sales": "1125",
+      "discounts": "0",
+      "net_sales": "651",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-16",
+      "gross_sales": "696",
+      "discounts": "0",
+      "net_sales": "-291.3",
+      "orders": "3"
+    },
+    {
+      "day": "2026-02-17",
+      "gross_sales": "1305",
+      "discounts": "0",
+      "net_sales": "86",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-18",
+      "gross_sales": "1320",
+      "discounts": "0",
+      "net_sales": "374",
+      "orders": "7"
+    },
+    {
+      "day": "2026-02-19",
+      "gross_sales": "1018.8",
+      "discounts": "0",
+      "net_sales": "9.8",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-20",
+      "gross_sales": "149",
+      "discounts": "0",
+      "net_sales": "-1230",
+      "orders": "1"
+    },
+    {
+      "day": "2026-02-21",
+      "gross_sales": "2047.8",
+      "discounts": "0",
+      "net_sales": "1389.8",
+      "orders": "10"
+    },
+    {
+      "day": "2026-02-22",
+      "gross_sales": "1218",
+      "discounts": "0",
+      "net_sales": "-103",
+      "orders": "9"
+    },
+    {
+      "day": "2026-02-23",
+      "gross_sales": "2076",
+      "discounts": "0",
+      "net_sales": "1951",
+      "orders": "9"
+    },
+    {
+      "day": "2026-02-24",
+      "gross_sales": "1355",
+      "discounts": "0",
+      "net_sales": "1355",
+      "orders": "5"
+    },
+    {
+      "day": "2026-02-25",
+      "gross_sales": "945.4",
+      "discounts": "0",
+      "net_sales": "747.4",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-26",
+      "gross_sales": "1111",
+      "discounts": "0",
+      "net_sales": "926",
+      "orders": "6"
+    },
+    {
+      "day": "2026-02-27",
+      "gross_sales": "2010",
+      "discounts": "0",
+      "net_sales": "1029",
+      "orders": "8"
+    },
+    {
+      "day": "2026-02-28",
+      "gross_sales": "1716",
+      "discounts": "0",
+      "net_sales": "1536",
+      "orders": "8"
+    }
+  ]
+}

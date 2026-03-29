@@ -1,0 +1,7 @@
+description = "Install project dependencies"
+prompt = """
+Execute the following command to install the required Python dependencies:
+!{pip install -r requirements.txt}
+
+Once finished, confirm if the installation was successful.
+"""

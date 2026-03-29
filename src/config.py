@@ -10,9 +10,9 @@ This is the single source of truth for:
 
 from typing import Dict, Any, List
 
-# Report date range — full month of February 2026
-REPORT_SINCE = "2026-02-01"
-REPORT_UNTIL = "2026-02-28"
+# Report date range — Q1 2026 (Jan 1 to Mar 31)
+REPORT_SINCE = "2026-01-01"
+REPORT_UNTIL = "2026-03-31"
 
 # Sub-channel configuration: defines how each sub-channel is identified in Shopify,
 # what commission rates apply, and special business rules (e.g., wholesale revenue estimation).

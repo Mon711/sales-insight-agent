@@ -1,0 +1,7 @@
+description = "Discover available sales channels in Shopify"
+prompt = """
+Execute the following command to discover available sales channels:
+!{python discover_channels.py}
+
+List the discovered channels and any notable observations from the output.
+"""
