@@ -42,15 +42,11 @@ def get_next_generation_dir(base_dir="reports"):
             if match:
                 existing_nums.append(int(match.group(1)))
 
-    # Start at 1 and find the first number that isn't taken
-    next_num = 1
+    # Find the highest number and add 1
     if existing_nums:
-        existing_nums.sort()
-        for num in existing_nums:
-            if num == next_num:
-                next_num += 1
-            elif num > next_num:
-                break # We found a gap!
+        next_num = max(existing_nums) + 1
+    else:
+        next_num = 1
     
     return os.path.join(base_dir, f"files_generation_{next_num}")
 
@@ -106,20 +102,25 @@ def main():
         if not product_rows:
             continue
 
-        # Find the 'Summary' row created by the 'WITH TOTALS' command in SQL
-        summary_row = next((row for row in product_rows if row.get("product_title") is None), {})
-        
-        # Prepare a clean summary block for the top of the JSON file
+        # ShopifyQL with 'WITH TOTALS' appends top-level totals as '__totals' columns to every row.
+        # We take these from the first row and convert them to numbers for clean analysis.
+        summary_row = product_rows[0]
         summary = {
-            "total_gross_sales": summary_row.get("gross_sales"),
-            "total_net_sales": summary_row.get("net_sales"),
-            "total_sales": summary_row.get("total_sales"),
-            "total_items_sold": summary_row.get("net_items_sold"),
+            "total_gross_sales": float(summary_row.get("gross_sales__totals") or 0),
+            "total_net_sales": float(summary_row.get("net_sales__totals") or 0),
+            "total_sales": float(summary_row.get("total_sales__totals") or 0),
+            "total_items_sold": float(summary_row.get("net_items_sold__totals") or 0),
         }
         
         # Special math for Wholesale (estimating revenue at 50% of retail)
         if channel_key == "wholesale" and summary["total_gross_sales"]:
-            summary["estimated_wholesale_revenue"] = round(float(summary["total_gross_sales"]) / 2, 2)
+            summary["estimated_wholesale_revenue"] = round(summary["total_gross_sales"] / 2, 2)
+
+        # Clean up each row to remove these extra totals columns before final JSON output
+        for row in product_rows:
+            for key in list(row.keys()):
+                if key.endswith("__totals"):
+                    del row[key]
 
         # Structure the final data for this specific channel
         channel_output = {

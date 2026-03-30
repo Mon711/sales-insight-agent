@@ -60,32 +60,30 @@ def build_product_query(
     
     # Define fields and sorting
     # We use a consistent set of fields across all channels for better AI analysis
-    show_clause = "product_title, product_vendor, product_type, net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
-    
-    if channel_key == "wholesale":
-        order_by = "gross_sales DESC"
-    else:
-        order_by = "total_sales DESC"
+    show_clause = "net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
+    order_by = "total_sales DESC"
 
-    # Define the WHERE clause based on filter_type
-    if filter_type == "sales_channel":
+    # Specialized logic for Online Store (Multi-channel + Exclusions)
+    if channel_key == "online_store":
+        where_clause = "sales_channel IN ('Online Store', 'Shop', 'Facebook', 'Instagram') AND line_type = 'product' AND product_title IS NOT NULL AND order_tags NOT CONTAINS 'Manymoons' AND order_tags NOT CONTAINS 'shopmy'"
+        
+    # Specialized logic for Wholesale (Tag-based)
+    elif channel_key == "wholesale":
+        where_clause = "order_tags CONTAINS 'wholesale' AND line_type = 'product' AND product_title IS NOT NULL"
+
+    # Generic logic for any other tag-based channel (Dropshippers)
+    elif filter_type == "order_tag":
+        tag = config.get("tag")
+        if not tag:
+            raise ValueError(f"Channel {channel_key} has no tag defined in config.")
+        where_clause = f"order_tags CONTAINS '{tag}' AND line_type = 'product' AND product_title IS NOT NULL"
+
+    # Default logic for others (like individual dropship channels)
+    elif filter_type == "sales_channel":
         channel = config.get("shopify_channel")
         if not channel:
             raise ValueError(f"Channel {channel_key} has no shopify_channel defined.")
         where_clause = f"sales_channel = '{channel}' AND line_type = 'product' AND product_title IS NOT NULL"
-
-    elif filter_type == "sales_channel_multi":
-        channels = config.get("shopify_channels", [])
-        exclude_tags = config.get("exclude_tags", [])
-        channel_conditions = " OR ".join([f"sales_channel = '{ch}'" for ch in channels])
-        exclude_conditions = " AND ".join([f"order_tags NOT CONTAINS '{tag}'" for tag in exclude_tags])
-        where_clause = f"({channel_conditions}) AND {exclude_conditions} AND line_type = 'product' AND product_title IS NOT NULL" if exclude_conditions else f"({channel_conditions}) AND line_type = 'product' AND product_title IS NOT NULL"
-
-    elif filter_type == "order_tag":
-        tag = config.get("tag")
-        if not tag:
-            raise ValueError(f"Channel {channel_key} has no tag defined.")
-        where_clause = f"order_tags CONTAINS '{tag}' AND line_type = 'product' AND product_title IS NOT NULL"
 
     else:
         raise ValueError(f"Unknown filter_type: {filter_type} for channel {channel_key}")
@@ -94,7 +92,7 @@ def build_product_query(
         FROM sales
         SHOW {show_clause}
         WHERE {where_clause}
-        GROUP BY product_title, product_vendor, product_type WITH TOTALS
+        GROUP BY product_title, product_type WITH TOTALS
         SINCE {since} UNTIL {until}
         ORDER BY {order_by}
         LIMIT {limit}
@@ -129,12 +127,18 @@ def run_product_report(
 
         rows = parse_product_rows(response)
 
-        # Compute true_net_sales for each product
+        # Compute true_net_sales and wholesale-specific logic
         commission_rate = config.get("commission_rate", 0.0)
         for row in rows:
-            net_sales = float(row.get("net_sales", 0) or 0)
-            true_net = net_sales * (1 - commission_rate)
+            # Standard calculation for all channels
+            net_val = float(row.get("net_sales", 0) or 0)
+            true_net = net_val * (1 - commission_rate)
             row["true_net_sales"] = round(true_net, 2)
+            
+            # Specialized Wholesale logic: net_sale = gross_sale / 2
+            if channel_key == "wholesale":
+                gross_val = float(row.get("gross_sales", 0) or 0)
+                row["estimated_net_sales"] = round(gross_val / 2, 2)
 
         print(f"    ✓ {len(rows)} products fetched")
         return rows

@@ -48,29 +48,40 @@ SUB_CHANNEL_CONFIG: Dict[str, Dict[str, Any]] = {
         "estimated_revenue_factor": 0.5,
         "description": "Wholesale orders (identified by 'wholesale' tag); payment offline, net_sales=$0",
     },
-    "dropship_mirakl": {
+    "dropship_nordstrom": {
         "parent": "dropship_group",
-        "commission_rate": 0.22,
-        "filter_type": "sales_channel",
-        "shopify_channel": None,  # CONFIRM VIA DISCOVERY QUERY
-        "shopify_channel_candidates": ["Mirakl Connect", "Mirakl", "Mirakl Connector"],
-        "description": "Nordstrom via Mirakl (blended commission: 22%)",
+        "commission_rate": 0.20,
+        "filter_type": "order_tag",
+        "tag": "Nordstrom",
+        "description": "Nordstrom via Mirakl (commission: 20%)",
     },
-    "dropship_fabric": {
+    "dropship_bloomingdales": {
+        "parent": "dropship_group",
+        "commission_rate": 0.25,
+        "filter_type": "order_tag",
+        "tag": "Bloomingdale''s",
+        "description": "Bloomingdale's via Mirakl (commission: 25%)",
+    },
+    "dropship_macys": {
+        "parent": "dropship_group",
+        "commission_rate": 0.18,
+        "filter_type": "order_tag",
+        "tag": "Macy''s",
+        "description": "Macy's (commission: 18%)",
+    },
+    "dropship_shop_couper": {
         "parent": "dropship_group",
         "commission_rate": 0.40,
-        "filter_type": "sales_channel",
-        "shopify_channel": None,  # CONFIRM VIA DISCOVERY QUERY
-        "shopify_channel_candidates": ["fabric Dropship Platform", "fabric Marketplace", "fabric"],
-        "description": "Regional retailers via fabric (commission: 40%)",
+        "filter_type": "order_tag",
+        "tag": "couper",
+        "description": "Shop Couper (commission: 40%)",
     },
-    "dropship_maisonette": {
+    "dropship_over_the_moon": {
         "parent": "dropship_group",
-        "commission_rate": 0.30,
-        "filter_type": "sales_channel",
-        "shopify_channel": None,  # CONFIRM VIA DISCOVERY QUERY
-        "shopify_channel_candidates": ["Maisonette", "Maisonette Marketplace"],
-        "description": "Maisonette (commission: 30%)",
+        "commission_rate": 0.40,
+        "filter_type": "order_tag",
+        "tag": "Over The Moon",
+        "description": "Over the Moon via fabric (commission: 40%)",
     },
 }
 
