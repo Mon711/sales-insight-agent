@@ -65,7 +65,7 @@ def build_product_query(
 
     # Specialized logic for Online Store (Multi-channel + Exclusions)
     if channel_key == "online_store":
-        where_clause = "sales_channel IN ('Online Store', 'Shop', 'Facebook', 'Instagram') AND line_type = 'product' AND product_title IS NOT NULL AND order_tags NOT CONTAINS 'Manymoons' AND order_tags NOT CONTAINS 'shopmy'"
+        where_clause = "sales_channel IN ('Online Store', 'Shop', 'Facebook & Instagram') AND line_type = 'product' AND product_title IS NOT NULL AND order_tags NOT CONTAINS 'Manymoons' AND order_tags NOT CONTAINS 'shopmy'"
         
     # Specialized logic for Wholesale (Tag-based)
     elif channel_key == "wholesale":

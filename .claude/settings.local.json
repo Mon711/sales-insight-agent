@@ -6,7 +6,7 @@
       "Bash(git commit -m \"Implement LLM-ready JSON analysis output:*)",
       "Bash(git push:*)",
       "mcp__shopify-dev-mcp__learn_shopify_api",
-      "mcp__shopify-dev-mcp__introspect_graphql_schema",
+      "__shopify-dev-mcp__introspect_graphql_schema",
       "mcp__shopify-dev-mcp__validate_graphql_codeblocks",
       "mcp__shopify-dev-mcp__search_docs_chunks",
       "mcp__shopify-dev-mcp__fetch_full_docs",

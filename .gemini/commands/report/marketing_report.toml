@@ -1,0 +1,8 @@
+description = "Generates a full AI-powered marketing analysis report from the latest sales data."
+prompt = """
+1. Activate the `marketing-analyst` skill to handle the analysis.
+2. Find the latest sales data in `reports/files_generation_X/`.
+3. Run the visualization engine: `!{python src/visualizer.py reports/files_generation_X/}`.
+4. Synthesize all findings into a professional Markdown report named `MARKETING_REPORT.md` inside `~/Desktop/eddy_marketing_insights_X/`, using the same `X` as the source folder.
+5. Provide a link to the generated report in the final output.
+"""

@@ -23,8 +23,8 @@ from src.config import REPORT_SINCE, REPORT_UNTIL
 
 def get_next_generation_dir(base_dir="reports"):
     """
-    Manages the 'reports/' folder. 
-    It looks at existing folders like 'files_generation_1' and finds the 
+    Manages the 'reports/' folder.
+    It looks at existing folders like 'files_generation_1' and finds the
     next available number, filling in any gaps if a folder was deleted.
     """
     if not os.path.exists(base_dir):
