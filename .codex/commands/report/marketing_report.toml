@@ -1,9 +1,17 @@
 description = "Generate a marketing analysis report from the latest sales data"
 prompt = """
-1. Activate the `marketing-analyst` skill.
-2. Find the latest `reports/files_generation_X/` folder.
-3. Run the visualization engine:
-   !{python generate_graphs_only.py}
-4. Synthesize the findings into a professional Markdown report named `MARKETING_REPORT.md` inside `~/Desktop/eddy_marketing_insights_X/`, using the same `X` as the source folder.
-5. Provide a link to the generated report in the final output.
+1. Activate the `$marketing-analyst` skill.
+2. Run the sales pipeline so the newest JSON reports exist:
+   !{python run_reports.py}
+3. Find the latest `reports/files_generation_X/` folder.
+4. Run the visualization engine:
+   !{python src/visualizer.py reports/files_generation_X/}
+5. Synthesize the findings into one professional Markdown report.
+   - Include separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels.
+   - For each channel, cover snapshot metrics, product winners, friction points, and the implications for Eddy.
+   - Embed the generated chart PNG files in the markdown using relative image links (for example: `![Channel Sales Comparison](channel_sales_comparison.png)`), and mention chart-based takeaways in the analysis.
+   - End with a cross-channel aggregate analysis and concrete recommendations for marketing, design, merchandising, and brand strategy.
+   - Use plain English, explain any jargon, and explicitly note when a metric is a heuristic rather than a hard benchmark.
+   - Return only Markdown text so the caller can save it to `MARKETING_REPORT.md`.
+6. Provide a link to the generated report in the final output.
 """

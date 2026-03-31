@@ -90,13 +90,19 @@ The access token must have **`read_reports`** scope to use `shopifyqlQuery`. Thi
 - Writes `reports/files_generation_N/` folders for downstream analysis
 
 ### Layer 4: Chart Generation — `generate_graphs_only.py` and `src/visualizer.py`
-- Turns the latest report folder into the three marketing charts on the Desktop
+- Turns the latest report folder into the Desktop charts that support the report
 - Uses `estimated_wholesale_revenue` for wholesale visualizations
 
 ### Layer 5: AI Analysis (manual for now)
 Clean JSON and charts are passed to Codex for analysis. Codex generates insights, identifies anomalies, and provides recommendations.
 
 Future: may integrate an LLM API directly into the repo.
+
+### Codex Entry Point
+
+The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
+The terminal-friendly wrapper is `./scripts/marketing_report.sh`.
+The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
 
 ---
 
