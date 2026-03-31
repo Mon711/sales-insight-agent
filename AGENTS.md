@@ -80,31 +80,23 @@ The access token must have **`read_reports`** scope to use `shopifyqlQuery`. Thi
 - `query()` — raw GraphQL execution
 - `run_shopifyql_report()` — executes a ShopifyQL string through the `shopifyqlQuery` GraphQL field
 
-### Layer 2: Channel Reports — `channel_reports.py`
-- Defines one ShopifyQL query per channel (`CHANNEL_QUERIES` dict)
-- `run_channel_report()` — fetches one channel, parses results, returns clean JSON
-- `run_all_channel_reports()` — runs all four channels
-- `run_discovery_query()` — utility to inspect what `sales_channel` values exist in the store
+### Layer 2: Product Reports — `product_reports.py`
+- Builds ShopifyQL queries for the active sub-channels from `src/config.py`
+- `run_product_report()` — fetches one channel, computes `true_net_sales`, and returns cleaned rows
+- `run_all_product_reports()` — runs all active product reports
 
-Output per channel:
-```json
-{
-  "channel": "pos",
-  "date_range": {"since": "2026-02-01", "until": "2026-02-28"},
-  "rows": [{"day": "2026-02-01", "gross_sales": "...", "net_sales": "...", "orders": "..."}, ...],
-  "summary": {
-    "total_gross_sales": 12000.00,
-    "total_net_sales": 11000.00,
-    "total_discounts": -500.00,
-    "total_orders": 80
-  }
-}
-```
+### Layer 3: Main Runner — `run_reports.py`
+- Orchestrates connection, discovery, report generation, and JSON output
+- Writes `reports/files_generation_N/` folders for downstream analysis
 
-### Layer 3: AI Analysis (manual for now)
-Clean JSON from Layer 2 is passed to Codex for analysis. Codex generates insights, identifies anomalies, and provides recommendations.
+### Layer 4: Chart Generation — `generate_graphs_only.py` and `src/visualizer.py`
+- Turns the latest report folder into the three marketing charts on the Desktop
+- Uses `estimated_wholesale_revenue` for wholesale visualizations
 
-Future: may integrate Codex API directly into the repo.
+### Layer 5: AI Analysis (manual for now)
+Clean JSON and charts are passed to Codex for analysis. Codex generates insights, identifies anomalies, and provides recommendations.
+
+Future: may integrate an LLM API directly into the repo.
 
 ---
 
