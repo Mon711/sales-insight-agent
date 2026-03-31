@@ -1,27 +1,27 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
 **Sales Insight Agent for Shopify — AI-Powered Reporting Foundation**
 
-This project fetches live Shopify analytics data via ShopifyQL, structures it by sales channel, and produces clean JSON output for AI analysis. The goal is to give Claude accurate, channel-aware sales data so it can generate rich business insights.
+This project fetches live Shopify analytics data via ShopifyQL, structures it by sales channel, and produces clean JSON output for AI analysis. The goal is to give Codex accurate, channel-aware sales data so it can generate rich business insights.
 
-This is NOT about hardcoded report templates. **It's about preparing trustworthy, structured data that Claude can analyze deeply.**
+This is NOT about hardcoded report templates. **It's about preparing trustworthy, structured data that Codex can analyze deeply.**
 
 ### Long-term Vision
 
 - **Phase 1 (done):** Shopify API connection + raw order fetching
 - **Phase 2 (current):** ShopifyQL analytics pipeline — fetch pre-aggregated, channel-specific reports directly from Shopify's analytics engine
-- **Phase 3:** Integrate Claude API to generate AI-powered insights automatically
+- **Phase 3:** Integrate Codex API to generate AI-powered insights automatically
 - **Phase 4:** Extend to broader agent roles (marketing manager agent, product manager agent, etc.)
 
 ### Key Business Principles
 
 - **Data accuracy first.** Use Shopify's own analytics engine (ShopifyQL) as the source of truth — it handles test orders, cancellations, and returns natively.
 - **Channel awareness.** Each sales channel (website, POS, wholesale, dropship) has different business logic and must be reported separately.
-- **AI-driven insights.** The pipeline's job is trustworthy data. Claude does the analysis.
+- **AI-driven insights.** The pipeline's job is trustworthy data. Codex does the analysis.
 
 ---
 
@@ -102,9 +102,9 @@ Output per channel:
 ```
 
 ### Layer 3: AI Analysis (manual for now)
-Clean JSON from Layer 2 is passed to Claude for analysis. Claude generates insights, identifies anomalies, and provides recommendations.
+Clean JSON from Layer 2 is passed to Codex for analysis. Codex generates insights, identifies anomalies, and provides recommendations.
 
-Future: may integrate Claude API directly into the repo.
+Future: may integrate Codex API directly into the repo.
 
 ---
 

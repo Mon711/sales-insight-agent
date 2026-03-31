@@ -110,6 +110,7 @@ def main():
             "total_net_sales": float(summary_row.get("net_sales__totals") or 0),
             "total_sales": float(summary_row.get("total_sales__totals") or 0),
             "total_items_sold": float(summary_row.get("net_items_sold__totals") or 0),
+            "total_orders": float(summary_row.get("orders__totals") or 0),
         }
         
         # Special math for Wholesale (estimating revenue at 50% of retail)

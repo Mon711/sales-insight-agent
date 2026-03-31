@@ -3,5 +3,5 @@ prompt = """
 Execute the following command to run all sales channel reports:
 !{python run_reports.py}
 
-Analyze the JSON output and provide a high-level summary of the sales performance across all channels.
+Then analyze the JSON output and provide a high-level summary of sales performance across all channels.
 """

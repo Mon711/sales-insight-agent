@@ -35,6 +35,7 @@ def build_product_query(
         return f"""
             FROM sales
             SHOW 
+                orders,
                 net_items_sold, 
                 gross_sales, 
                 discounts, 
@@ -60,7 +61,7 @@ def build_product_query(
     
     # Define fields and sorting
     # We use a consistent set of fields across all channels for better AI analysis
-    show_clause = "net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
+    show_clause = "orders, net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
     order_by = "total_sales DESC"
 
     # Specialized logic for Online Store (Multi-channel + Exclusions)
