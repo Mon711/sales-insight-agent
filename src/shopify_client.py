@@ -7,7 +7,7 @@ Credentials are read from environment variables — never hardcoded.
 
 import os
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -98,6 +98,275 @@ class ShopifyGraphQLClient:
         """
         result = self.query(graphql_query, variables={"qlQuery": shopifyql_query})
         return result.get("data", {}).get("shopifyqlQuery", {})
+
+    def probe_shopifyql_product_id_support(self, since: str, until: str) -> bool:
+        """
+        Check whether ShopifyQL supports `product_id` in the current store context.
+
+        Returns:
+            True when the query parses successfully, False on ShopifyQL parse errors.
+
+        Raises:
+            Exception for transport/auth failures from the underlying API call.
+        """
+        probe_query = (
+            "FROM sales "
+            "SHOW product_title, product_id, net_sales "
+            "WHERE line_type = 'product' AND product_title IS NOT NULL "
+            "GROUP BY product_title, product_id "
+            f"SINCE {since} UNTIL {until} "
+            "LIMIT 1"
+        )
+        response = self.run_shopifyql_report(probe_query)
+        return not bool(response.get("parseErrors"))
+
+    def check_read_products_access(self) -> Tuple[bool, Optional[str]]:
+        """
+        Verify whether the current token can read Product data (read_products scope).
+
+        Returns:
+            (True, None) when access works, else (False, error_message).
+        """
+        graphql_query = """
+        query ProductScopeCheck {
+            products(first: 1) {
+                nodes {
+                    id
+                }
+            }
+        }
+        """
+        try:
+            self.query(graphql_query)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def to_product_gid(raw_product_id: Any) -> Optional[str]:
+        """
+        Convert a Shopify product identifier into gid://shopify/Product/<id> format.
+        """
+        if raw_product_id is None:
+            return None
+
+        value = str(raw_product_id).strip()
+        if not value:
+            return None
+
+        if value.startswith("gid://shopify/Product/"):
+            return value
+
+        if value.isdigit():
+            return f"gid://shopify/Product/{value}"
+
+        return None
+
+    @staticmethod
+    def _extract_primary_media_image(product_node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Return the best available image metadata for a product node."""
+        featured_media = product_node.get("featuredMedia")
+        if featured_media and featured_media.get("__typename") == "MediaImage":
+            image = featured_media.get("image") or {}
+            url = image.get("url")
+            if url:
+                return {
+                    "source": "featured_media",
+                    "media_id": featured_media.get("id"),
+                    "url": url,
+                    "width": image.get("width"),
+                    "height": image.get("height"),
+                    "alt_text": image.get("altText") or featured_media.get("alt"),
+                }
+
+        media_nodes = (
+            product_node.get("media", {})
+            .get("nodes", [])
+        )
+        for media in media_nodes:
+            if not media or media.get("__typename") != "MediaImage":
+                continue
+            image = media.get("image") or {}
+            url = image.get("url")
+            if url:
+                return {
+                    "source": "media_first",
+                    "media_id": media.get("id"),
+                    "url": url,
+                    "width": image.get("width"),
+                    "height": image.get("height"),
+                    "alt_text": image.get("altText") or media.get("alt"),
+                }
+
+        return None
+
+    def _build_product_image_record(self, product_node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize a Product node into a compact image record."""
+        product_id = product_node.get("id")
+        if not product_id:
+            return None
+
+        return {
+            "id": product_id,
+            "title": product_node.get("title"),
+            "handle": product_node.get("handle"),
+            "primary_image": self._extract_primary_media_image(product_node),
+        }
+
+    def fetch_product_image_records_by_ids(
+        self,
+        product_gids: List[str],
+        batch_size: int = 50,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch product image metadata for a list of product GIDs.
+
+        Returns:
+            Mapping: product_gid -> normalized product image record.
+        """
+        unique_ids: List[str] = []
+        seen = set()
+        for pid in product_gids:
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            unique_ids.append(pid)
+
+        if not unique_ids:
+            return {}
+
+        graphql_query = """
+        query ProductImagesByIds($ids: [ID!]!) {
+            nodes(ids: $ids) {
+                __typename
+                ... on Product {
+                    id
+                    title
+                    handle
+                    featuredMedia {
+                        __typename
+                        ... on MediaImage {
+                            id
+                            alt
+                            image {
+                                url
+                                width
+                                height
+                                altText
+                            }
+                        }
+                    }
+                    media(first: 5, query: "media_type:IMAGE", sortKey: POSITION) {
+                        nodes {
+                            __typename
+                            ... on MediaImage {
+                                id
+                                alt
+                                image {
+                                    url
+                                    width
+                                    height
+                                    altText
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        batch_size = max(1, min(batch_size, 250))
+        records: Dict[str, Dict[str, Any]] = {}
+
+        for start in range(0, len(unique_ids), batch_size):
+            batch = unique_ids[start:start + batch_size]
+            result = self.query(graphql_query, variables={"ids": batch})
+            nodes = result.get("data", {}).get("nodes", [])
+
+            for node in nodes:
+                if not node or node.get("__typename") != "Product":
+                    continue
+                record = self._build_product_image_record(node)
+                if record:
+                    records[record["id"]] = record
+
+        return records
+
+    def find_product_image_records_by_exact_title(
+        self,
+        title: str,
+        first: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Search products by title and return exact title matches with image metadata.
+        """
+        cleaned_title = (title or "").strip()
+        if not cleaned_title:
+            return []
+
+        escaped = cleaned_title.replace("\\", "\\\\").replace('"', '\\"')
+        search_query = f'title:"{escaped}"'
+
+        graphql_query = """
+        query FindProductsForTitle($query: String!, $first: Int!) {
+            products(first: $first, query: $query, sortKey: TITLE) {
+                nodes {
+                    id
+                    title
+                    handle
+                    featuredMedia {
+                        __typename
+                        ... on MediaImage {
+                            id
+                            alt
+                            image {
+                                url
+                                width
+                                height
+                                altText
+                            }
+                        }
+                    }
+                    media(first: 5, query: "media_type:IMAGE", sortKey: POSITION) {
+                        nodes {
+                            __typename
+                            ... on MediaImage {
+                                id
+                                alt
+                                image {
+                                    url
+                                    width
+                                    height
+                                    altText
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        result = self.query(
+            graphql_query,
+            variables={"query": search_query, "first": first},
+        )
+        nodes = result.get("data", {}).get("products", {}).get("nodes", [])
+        normalized_target = cleaned_title.lower()
+
+        matches = []
+        for node in nodes:
+            if not node:
+                continue
+            node_title = (node.get("title") or "").strip().lower()
+            if node_title != normalized_target:
+                continue
+            record = self._build_product_image_record(node)
+            if record:
+                matches.append(record)
+
+        return matches
 
     def discover_channels(self, since: str, until: str) -> List[Dict[str, Any]]:
         """

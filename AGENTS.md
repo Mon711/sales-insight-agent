@@ -43,6 +43,7 @@ SHOPIFY_ACCESS_TOKEN=your-access-token
 ```
 
 The access token requires the **`read_reports`** scope (enables ShopifyQL).
+For product-image enrichment, it also needs **`read_products`**.
 
 ### Running the Test Suite
 
@@ -70,6 +71,7 @@ Never create fake Shopify order data unless explicitly asked. All data comes fro
 
 ### Required API Scope
 The access token must have **`read_reports`** scope to use `shopifyqlQuery`. This is different from `read_analytics` — make sure it's `read_reports`.
+If you enable product image pull, include **`read_products`** on the same token.
 
 ---
 

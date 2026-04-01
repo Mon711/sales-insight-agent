@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from src.shopify_client import ShopifyGraphQLClient
 from src.product_reports import run_all_product_reports
 from src.config import REPORT_SINCE, REPORT_UNTIL
+from src.image_enrichment import (
+    TOP_PRODUCTS_IMAGE_LIMIT,
+    enrich_channel_product_rows,
+    mark_channel_image_enrichment_skipped,
+)
 
 
 def get_next_generation_dir(base_dir="reports"):
@@ -70,6 +75,15 @@ def main():
         print(f"✗ Connection failed: {e}")
         sys.exit(1)
 
+    # --- STEP 1.5: Verify Product API Access (for image enrichment) ---
+    print("\n[STEP 1.5] Checking Product API access for image enrichment...")
+    products_access_ok, products_access_error = client.check_read_products_access()
+    if products_access_ok:
+        print("✓ Product API access confirmed (read_products scope available)")
+    else:
+        print("⚠ Product API access unavailable. Reports will still run without images.")
+        print(f"  Reason: {products_access_error}")
+
     # --- STEP 2: Discovery (Check what channels are active) ---
     print("\n[STEP 2] Identifying active sales channels...")
     try:
@@ -83,11 +97,25 @@ def main():
         print(f"✗ Discovery failed: {e}")
         sys.exit(1)
 
+    # --- STEP 2.5: Probe ShopifyQL support for product_id ---
+    print("\n[STEP 2.5] Checking ShopifyQL support for product_id...")
+    include_product_id = False
+    try:
+        include_product_id = client.probe_shopifyql_product_id_support(REPORT_SINCE, REPORT_UNTIL)
+        if include_product_id:
+            print("✓ product_id is available in ShopifyQL output (ID-first image matching enabled)")
+        else:
+            print("⚠ product_id not available in ShopifyQL output (title fallback will be used)")
+    except Exception as e:
+        print(f"⚠ Could not probe product_id support: {e}")
+        print("  Falling back to title-based image matching only.")
+        include_product_id = False
+
     # --- STEP 3: Run Product-Wise Reports ---
     print("\n[STEP 3] Fetching detailed product data...")
     try:
         # This reaches out to Shopify for every product in every channel
-        all_products = run_all_product_reports(client)
+        all_products = run_all_product_reports(client, include_product_id=include_product_id)
     except Exception as e:
         print(f"✗ Product report failed: {e}")
         sys.exit(1)
@@ -97,6 +125,7 @@ def main():
     
     timestamp = datetime.now(timezone.utc).isoformat()
     saved_count = 0
+    product_image_index = []
 
     for channel_key, product_rows in all_products.items():
         if not product_rows:
@@ -123,12 +152,30 @@ def main():
                 if key.endswith("__totals"):
                     del row[key]
 
+        if products_access_ok:
+            image_summary, image_index_rows = enrich_channel_product_rows(
+                client=client,
+                channel_key=channel_key,
+                product_rows=product_rows,
+                generation_dir=gen_dir,
+                top_limit=TOP_PRODUCTS_IMAGE_LIMIT,
+            )
+        else:
+            image_summary, image_index_rows = mark_channel_image_enrichment_skipped(
+                product_rows=product_rows,
+                reason=f"Product API unavailable: {products_access_error}",
+                top_limit=TOP_PRODUCTS_IMAGE_LIMIT,
+            )
+
+        product_image_index.extend(image_index_rows)
+
         # Structure the final data for this specific channel
         channel_output = {
             "generated_at": timestamp,
             "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
             "channel_name": channel_key,
             "channel_summary": summary,
+            "image_enrichment_summary": image_summary,
             "product_sales_performance": product_rows
         }
 
@@ -144,6 +191,24 @@ def main():
             saved_count += 1
         except Exception as e:
             print(f"  ✗ Failed to save {filename}: {e}")
+
+    index_path = os.path.join(gen_dir, "product_image_index.json")
+    try:
+        with open(index_path, "w") as f:
+            json.dump(
+                {
+                    "generated_at": timestamp,
+                    "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
+                    "top_limit": TOP_PRODUCTS_IMAGE_LIMIT,
+                    "entries": product_image_index,
+                },
+                f,
+                indent=2,
+                default=str,
+            )
+        print(f"  ✓ Saved: {os.path.basename(index_path)}")
+    except Exception as e:
+        print(f"  ✗ Failed to save {os.path.basename(index_path)}: {e}")
 
     print("\n" + "=" * 60)
     print(f"✓ Success — {saved_count} reports generated in {gen_dir}")
