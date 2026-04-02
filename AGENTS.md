@@ -90,6 +90,7 @@ If you enable product image pull, include **`read_products`** on the same token.
 ### Layer 3: Main Runner — `run_reports.py`
 - Orchestrates connection, discovery, report generation, and JSON output
 - Writes `reports/files_generation_N/` folders for downstream analysis
+- Enriches top 20 products per channel with Shopify product-image metadata/local assets when scope is available
 
 ### Layer 4: Chart Generation — `generate_graphs_only.py` and `src/visualizer.py`
 - Turns the latest report folder into the Desktop charts that support the report
@@ -105,6 +106,7 @@ Future: may integrate an LLM API directly into the repo.
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
 The terminal-friendly wrapper is `./scripts/marketing_report.sh`.
 The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
+The wrapper now also bundles image assets into the Desktop output folder and exports `MARKETING_REPORT.pdf` for portable sharing.
 
 ---
 

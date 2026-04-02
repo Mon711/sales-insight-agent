@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 import requests
 
 
-TOP_PRODUCTS_IMAGE_LIMIT = 100
+TOP_PRODUCTS_IMAGE_LIMIT = 20
 IMAGE_DOWNLOAD_TIMEOUT_SECONDS = 20
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
@@ -332,4 +332,3 @@ def enrich_channel_product_rows(
         )
 
     return summary, index_entries
-
