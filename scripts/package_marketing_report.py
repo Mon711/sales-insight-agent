@@ -2,10 +2,11 @@
 """
 Bundle report assets and export a PDF version of the marketing report.
 
-This script solves the "broken image links after export" issue by:
-1. Copying referenced image assets into the Desktop report folder.
-2. Rewriting Markdown image paths to local relative paths.
-3. Rendering a PDF from the updated Markdown (when reportlab is installed).
+This script solves report portability issues by:
+1. Copying the whole reports/assets tree into the Desktop output folder.
+2. Rewriting markdown image links to local relative paths under report_assets/.
+3. Converting plain product-image path mentions into real markdown image embeds.
+4. Rendering a cleaner PDF with section-based page breaks and table support.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ IMAGE_LINK_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
 UNORDERED_BULLET_PATTERN = re.compile(r"^\s*[-*]\s+(.+)$")
 ORDERED_BULLET_PATTERN = re.compile(r"^\s*\d+\.\s+(.+)$")
+TABLE_SEPARATOR_PATTERN = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$")
+PRODUCT_IMAGE_PATH_PATTERN = re.compile(
+    r"(assets/product_images/[a-zA-Z0-9_\-./]+\.(?:jpg|jpeg|png|webp|gif|bmp|tif|tiff|avif))"
+)
 
 
 def _extract_target(raw_target: str) -> str:
@@ -30,7 +35,6 @@ def _extract_target(raw_target: str) -> str:
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1].strip()
 
-    # Handle optional markdown image title suffix: (path "title")
     if " \"" in target and target.endswith('"'):
         maybe_path, _ = target.rsplit(" \"", 1)
         target = maybe_path.strip()
@@ -43,6 +47,22 @@ def _is_remote_target(target: str) -> bool:
     return lowered.startswith("http://") or lowered.startswith("https://") or lowered.startswith("data:")
 
 
+def _split_markdown_table_row(line: str) -> List[str]:
+    body = line.strip().strip("|")
+    return [cell.strip() for cell in body.split("|")]
+
+
+def _copy_reports_assets_tree(reports_dir: Path, output_dir: Path) -> int:
+    source_assets = (reports_dir / "assets").resolve()
+    destination_assets = (output_dir / "report_assets").resolve()
+    if not source_assets.exists():
+        return 0
+
+    destination_assets.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_assets, destination_assets, dirs_exist_ok=True)
+    return sum(1 for p in destination_assets.rglob("*") if p.is_file())
+
+
 def _find_image_source(
     *,
     target: str,
@@ -53,6 +73,12 @@ def _find_image_source(
     if _is_remote_target(target):
         return None
 
+    # Prefer already-packaged desktop assets for direct portability.
+    if target.startswith("assets/"):
+        packaged = (output_dir / "report_assets" / target[len("assets/"):]).resolve()
+        if packaged.exists() and packaged.is_file():
+            return packaged
+
     path_obj = Path(target)
     candidates: List[Path] = []
 
@@ -62,10 +88,8 @@ def _find_image_source(
         candidates.append((markdown_path.parent / path_obj).resolve())
         candidates.append((output_dir / path_obj).resolve())
         candidates.append((reports_dir / path_obj).resolve())
-
-    # Explicit support for report assets that commonly use assets/... paths.
-    if target.startswith("assets/"):
-        candidates.append((reports_dir / target).resolve())
+        if target.startswith("assets/"):
+            candidates.append((reports_dir / target).resolve())
 
     seen = set()
     for candidate in candidates:
@@ -92,8 +116,11 @@ def _copy_asset_to_output(
         relative_from_assets = source.resolve().relative_to(reports_assets_dir)
         destination = output_assets_dir / relative_from_assets
     except ValueError:
-        # For non-standard sources, keep them grouped but still portable.
-        destination = output_assets_dir / "external" / source.name
+        try:
+            already_packaged = source.resolve().relative_to(output_assets_dir.resolve())
+            return output_assets_dir / already_packaged
+        except ValueError:
+            destination = output_assets_dir / "external" / source.name
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if not destination.exists():
@@ -101,8 +128,42 @@ def _copy_asset_to_output(
     return destination
 
 
-def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: Path) -> Tuple[int, int]:
+def _inject_product_image_embeds_for_plain_paths(markdown_text: str) -> Tuple[str, int]:
+    """
+    Convert plain `assets/product_images/...` mentions into markdown image embeds.
+    """
+    lines = markdown_text.splitlines()
+    out_lines: List[str] = []
+    inserted = 0
+
+    for line in lines:
+        out_lines.append(line)
+        if "![" in line:
+            continue
+
+        matches = PRODUCT_IMAGE_PATH_PATTERN.findall(line)
+        if not matches:
+            continue
+
+        unique_paths = []
+        seen = set()
+        for path in matches:
+            if path in seen:
+                continue
+            seen.add(path)
+            unique_paths.append(path)
+
+        for path in unique_paths:
+            filename = Path(path).stem.replace("_", " ").strip() or "Product Image"
+            out_lines.append(f"![{filename}]({path})")
+            inserted += 1
+
+    return "\n".join(out_lines), inserted
+
+
+def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: Path) -> Tuple[int, int, int]:
     text = markdown_path.read_text(encoding="utf-8")
+    text, inserted_embeds = _inject_product_image_embeds_for_plain_paths(text)
     copied_count = 0
     rewritten_count = 0
 
@@ -121,13 +182,6 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
         if source is None:
             return match.group(0)
 
-        # Keep local output images unchanged (for example chart PNGs already in output_dir).
-        try:
-            source.resolve().relative_to(output_dir.resolve())
-            return match.group(0)
-        except ValueError:
-            pass
-
         destination = _copy_asset_to_output(
             source=source,
             reports_dir=reports_dir,
@@ -140,7 +194,7 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
 
     updated = IMAGE_LINK_PATTERN.sub(replace, text)
     markdown_path.write_text(updated, encoding="utf-8")
-    return copied_count, rewritten_count
+    return copied_count, rewritten_count, inserted_embeds
 
 
 def _inline_markdown_to_paragraph_html(text: str) -> str:
@@ -159,7 +213,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import Image as RLImage
-        from reportlab.platypus import Paragraph, Preformatted, SimpleDocTemplate, Spacer
+        from reportlab.platypus import PageBreak, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
     except Exception as exc:
         raise RuntimeError(
             "Missing PDF dependency. Install with: python3 -m pip install reportlab"
@@ -197,8 +251,11 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
     flowables = []
     in_code_block = False
     code_lines: List[str] = []
+    seen_h2 = False
+    i = 0
 
-    for line in lines:
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
 
         if stripped.startswith("```"):
@@ -209,14 +266,54 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                 in_code_block = False
             else:
                 in_code_block = True
+            i += 1
             continue
 
         if in_code_block:
             code_lines.append(line.rstrip())
+            i += 1
+            continue
+
+        if stripped.startswith("|") and i + 1 < len(lines) and TABLE_SEPARATOR_PATTERN.match(lines[i + 1].strip()):
+            header_cells = _split_markdown_table_row(lines[i])
+            table_rows: List[List[str]] = [header_cells]
+            i += 2
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_rows.append(_split_markdown_table_row(lines[i]))
+                i += 1
+
+            col_count = len(header_cells)
+            normalized_rows = []
+            for row in table_rows:
+                if len(row) < col_count:
+                    row = row + [""] * (col_count - len(row))
+                elif len(row) > col_count:
+                    row = row[:col_count]
+                normalized_rows.append(
+                    [Paragraph(_inline_markdown_to_paragraph_html(cell), body_style) for cell in row]
+                )
+
+            table = Table(normalized_rows, repeatRows=1, hAlign="LEFT")
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f6f8")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                )
+            )
+            flowables.append(table)
+            flowables.append(Spacer(1, 0.10 * inch))
             continue
 
         if not stripped:
             flowables.append(Spacer(1, 0.08 * inch))
+            i += 1
             continue
 
         image_match = IMAGE_LINK_PATTERN.fullmatch(stripped)
@@ -235,28 +332,37 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             else:
                 note = _inline_markdown_to_paragraph_html(f"[Missing image: {image_target}]")
                 flowables.append(Paragraph(note, body_style))
+            i += 1
             continue
 
         heading_match = HEADING_PATTERN.match(stripped)
         if heading_match:
             level = min(len(heading_match.group(1)), 3)
             content = _inline_markdown_to_paragraph_html(heading_match.group(2))
+            if level == 2:
+                if seen_h2 and flowables:
+                    flowables.append(PageBreak())
+                seen_h2 = True
             flowables.append(Paragraph(content, heading_styles[level]))
+            i += 1
             continue
 
         unordered_match = UNORDERED_BULLET_PATTERN.match(line)
         if unordered_match:
             content = _inline_markdown_to_paragraph_html(unordered_match.group(1))
-            flowables.append(Paragraph(f"• {content}", body_style))
+            flowables.append(Paragraph(f"- {content}", body_style))
+            i += 1
             continue
 
         ordered_match = ORDERED_BULLET_PATTERN.match(line)
         if ordered_match:
             content = _inline_markdown_to_paragraph_html(ordered_match.group(1))
             flowables.append(Paragraph(content, body_style))
+            i += 1
             continue
 
         flowables.append(Paragraph(_inline_markdown_to_paragraph_html(line), body_style))
+        i += 1
 
     if in_code_block and code_lines:
         flowables.append(Preformatted("\n".join(code_lines), code_style))
@@ -297,8 +403,13 @@ def main() -> int:
         print(f"ERROR: Output directory not found: {output_dir}", file=sys.stderr)
         return 1
 
-    copied_count, rewritten_count = bundle_markdown_assets(markdown_path, reports_dir, output_dir)
-    print(f"Bundled assets copied: {copied_count}, links rewritten: {rewritten_count}")
+    copied_assets_total = _copy_reports_assets_tree(reports_dir, output_dir)
+    copied_count, rewritten_count, inserted_embeds = bundle_markdown_assets(markdown_path, reports_dir, output_dir)
+    print(
+        "Packaged assets files available: "
+        f"{copied_assets_total}; markdown links rewritten: {rewritten_count}; "
+        f"new product embeds inserted: {inserted_embeds}; direct copies in rewrite pass: {copied_count}"
+    )
 
     try:
         export_pdf(markdown_path, pdf_path)

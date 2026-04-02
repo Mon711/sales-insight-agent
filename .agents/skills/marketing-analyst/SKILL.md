@@ -31,6 +31,7 @@ Produce one Markdown report that:
    - Embed the generated PNG charts in the Markdown using image syntax (for example: `![Channel Sales Comparison](channel_sales_comparison.png)`).
    - Reference chart takeaways directly inside the channel analysis narrative instead of listing images without explanation.
    - Use `product_image` fields in product rows (`remote_url`, `local_path`, `status`) to support visual product analysis when available, and clearly note when image matches are missing or ambiguous.
+   - If you cite product photos, embed them as markdown images using `product_image.local_path` (not plain text paths), and limit to at most 2 product photos per major channel section.
    - Prefer returning Markdown text to the caller so wrapper commands can save the file in the final destination.
 5. If the user wants a terminal-friendly entry point, use `./scripts/marketing_report.sh`.
 
