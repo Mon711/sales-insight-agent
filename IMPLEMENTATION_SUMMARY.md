@@ -122,6 +122,104 @@ The agent uses the `WITH TOTALS` modifier in ShopifyQL. This appends additional 
 
 ## Future Phases
 
+## Phase 2.6 Addendum: Product Image Enrichment + Portable Report Export
+
+This section reflects the newer implementation merged after Phase 2.5.
+
+### What Was Added
+
+### 1. Product Image Enrichment (`src/image_enrichment.py`) ✓
+
+**Purpose**: Attach product visuals to report rows so AI analysis can reason about product style themes, not only sales numbers.
+
+**Key Features**:
+- Enriches top **20** products per channel (by channel-relevant sales score).
+- Matching strategy:
+  - First tries Shopify product ID (`product_id`) when available.
+  - Falls back to exact-title search when ID matching is not available.
+- Stores both metadata and local image path:
+  - `remote_url` (Shopify CDN URL)
+  - `local_path` (saved asset path)
+  - match confidence + status (`enriched`, `metadata_only`, `ambiguous`, `not_found`, etc.)
+
+### 2. Shopify Product API Helpers (`src/shopify_client.py`) ✓
+
+**Purpose**: Retrieve product media from the Admin GraphQL Product API.
+
+**Key Features**:
+- Scope check for Product API access (`read_products`).
+- ShopifyQL probe to detect whether `product_id` is available in the current store query context.
+- Product media fetch methods using Admin GraphQL `Product` media fields.
+
+### 3. Main Pipeline Integration (`run_reports.py`) ✓
+
+**Purpose**: Keep image enrichment in the main report generation workflow without breaking existing reporting.
+
+**Key Features**:
+- Adds `product_image` object to product rows in each `report_*.json`.
+- Adds channel-level `image_enrichment_summary`.
+- Writes generation-level `product_image_index.json`.
+- Graceful fallback behavior:
+  - If Product API scope/access fails, the report still generates; image enrichment is marked skipped with reason.
+
+### 4. Portable Desktop Output + PDF (`scripts/marketing_report.sh`, `scripts/package_marketing_report.py`) ✓
+
+**Purpose**: Make the final report sharable without manual path fixing.
+
+**Key Features**:
+- Bundles report assets into Desktop output folder under `report_assets/`.
+- Rewrites markdown image links to local portable paths.
+- Converts plain product image path mentions into markdown image embeds during packaging.
+- Exports `MARKETING_REPORT.pdf` from packaged markdown.
+- Improved PDF rendering behavior:
+  - better markdown handling for tables and image embeds
+  - section-based page breaks
+
+### 5. Prompt/Skill Updates for Image Embeds ✓
+
+Updated the report generation command + skill instructions so product images are embedded as real markdown images (`![...](...)`) instead of plain text paths.
+
+---
+
+## Updated Output Contract
+
+### Report JSON (`reports/files_generation_N/report_*.json`)
+- Existing fields remain.
+- Added:
+  - `image_enrichment_summary` (channel level)
+  - `product_sales_performance[].product_image` (row level)
+
+### Generation Assets
+- `reports/files_generation_N/assets/product_images/...`
+- `reports/files_generation_N/product_image_index.json`
+
+### Desktop Deliverables
+- `~/Desktop/eddy_marketing_insights_N/MARKETING_REPORT.md`
+- `~/Desktop/eddy_marketing_insights_N/MARKETING_REPORT.pdf`
+- `~/Desktop/eddy_marketing_insights_N/report_assets/...`
+- chart PNGs + log files
+
+---
+
+## Scope Requirements (Updated)
+
+- `read_reports` is required for ShopifyQL reporting.
+- `read_products` is required for product image enrichment.
+
+If `read_products` is missing, report generation still succeeds but image enrichment is skipped gracefully.
+
+---
+
+## Validation Added
+
+- New unit tests in `test_image_enrichment.py` for:
+  - ID-based match and successful download
+  - title-match ambiguity handling
+  - top-limit behavior (20 per channel)
+  - metadata-only fallback when download fails
+
+---
+
 ### Phase 3 (AI Integration)
 - Feed JSON reports to Gemini/Claude to generate cross-channel insights.
 - Example: "Identify the top 5 products by profitability after commission across all dropship channels."
