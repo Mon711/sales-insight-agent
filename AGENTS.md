@@ -43,6 +43,7 @@ SHOPIFY_ACCESS_TOKEN=your-access-token
 ```
 
 The access token requires the **`read_reports`** scope (enables ShopifyQL).
+For product-image enrichment, it also needs **`read_products`**.
 
 ### Running the Test Suite
 
@@ -70,6 +71,7 @@ Never create fake Shopify order data unless explicitly asked. All data comes fro
 
 ### Required API Scope
 The access token must have **`read_reports`** scope to use `shopifyqlQuery`. This is different from `read_analytics` — make sure it's `read_reports`.
+If you enable product image pull, include **`read_products`** on the same token.
 
 ---
 
@@ -88,6 +90,7 @@ The access token must have **`read_reports`** scope to use `shopifyqlQuery`. Thi
 ### Layer 3: Main Runner — `run_reports.py`
 - Orchestrates connection, discovery, report generation, and JSON output
 - Writes `reports/files_generation_N/` folders for downstream analysis
+- Enriches top 20 products per channel with Shopify product-image metadata/local assets when scope is available
 
 ### Layer 4: Chart Generation — `generate_graphs_only.py` and `src/visualizer.py`
 - Turns the latest report folder into the Desktop charts that support the report
@@ -103,6 +106,7 @@ Future: may integrate an LLM API directly into the repo.
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
 The terminal-friendly wrapper is `./scripts/marketing_report.sh`.
 The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
+The wrapper now also bundles image assets into the Desktop output folder and exports `MARKETING_REPORT.pdf` for portable sharing.
 
 ---
 

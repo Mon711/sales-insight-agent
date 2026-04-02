@@ -21,6 +21,7 @@ def build_product_query(
     since: str,
     until: str,
     limit: int = 1000,
+    include_product_id: bool = False,
 ) -> str:
     """
     Build a ShopifyQL product query for a specific sub-channel.
@@ -30,26 +31,35 @@ def build_product_query(
     - Other channels: Standard title/revenue query.
     """
     
+    group_fields = ["product_title", "product_type"]
+    if include_product_id:
+        group_fields.append("product_id")
+
+    metric_fields = [
+        "orders",
+        "net_items_sold",
+        "gross_sales",
+        "discounts",
+        "returns",
+        "net_sales",
+        "taxes",
+        "total_sales",
+    ]
+    show_clause = ", ".join(group_fields + metric_fields)
+    group_by_clause = ", ".join(group_fields)
+
     # 1. Specialized POS query
     if channel_key == "pos":
         return f"""
             FROM sales
             SHOW 
-                orders,
-                net_items_sold, 
-                gross_sales, 
-                discounts, 
-                returns, 
-                net_sales, 
-                taxes, 
-                total_sales
+                {show_clause}
             WHERE 
                 is_pos_sale = true 
                 AND line_type = 'product' 
                 AND product_title IS NOT NULL
             GROUP BY 
-                product_title, 
-                product_type WITH TOTALS
+                {group_by_clause} WITH TOTALS
             SINCE {since} UNTIL {until}
             ORDER BY 
                 total_sales DESC
@@ -61,7 +71,6 @@ def build_product_query(
     
     # Define fields and sorting
     # We use a consistent set of fields across all channels for better AI analysis
-    show_clause = "orders, net_items_sold, gross_sales, discounts, returns, net_sales, taxes, total_sales"
     order_by = "total_sales DESC"
 
     # Specialized logic for Online Store (Multi-channel + Exclusions)
@@ -93,7 +102,7 @@ def build_product_query(
         FROM sales
         SHOW {show_clause}
         WHERE {where_clause}
-        GROUP BY product_title, product_type WITH TOTALS
+        GROUP BY {group_by_clause} WITH TOTALS
         SINCE {since} UNTIL {until}
         ORDER BY {order_by}
         LIMIT {limit}
@@ -112,12 +121,20 @@ def run_product_report(
     since: str = REPORT_SINCE,
     until: str = REPORT_UNTIL,
     limit: int = 1000,
+    include_product_id: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Fetch and parse top products for a specific sub-channel.
     """
     try:
-        query = build_product_query(channel_key, config, since, until, limit)
+        query = build_product_query(
+            channel_key=channel_key,
+            config=config,
+            since=since,
+            until=until,
+            limit=limit,
+            include_product_id=include_product_id,
+        )
         print(f"  [PRODUCTS] Fetching top {limit} products for {channel_key}...")
 
         response = client.run_shopifyql_report(query)
@@ -154,6 +171,7 @@ def run_all_product_reports(
     since: str = REPORT_SINCE,
     until: str = REPORT_UNTIL,
     limit: int = 1000,
+    include_product_id: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Fetch product reports for all active sub-channels.
@@ -169,7 +187,15 @@ def run_all_product_reports(
             print(f"  ⚠ Skipping {channel_key} — not found in config")
             continue
 
-        products = run_product_report(client, channel_key, config, since, until, limit)
+        products = run_product_report(
+            client=client,
+            channel_key=channel_key,
+            config=config,
+            since=since,
+            until=until,
+            limit=limit,
+            include_product_id=include_product_id,
+        )
         all_products[channel_key] = products
 
     return all_products

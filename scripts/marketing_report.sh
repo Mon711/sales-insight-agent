@@ -54,7 +54,7 @@ append_missing_chart_embeds() {
 tmp_log_dir="$(mktemp -d "${TMPDIR:-/tmp}/marketing_report_logs.XXXXXX")"
 run_reports_log="$tmp_log_dir/run_reports.log"
 
-echo "[1/3] Fetching the latest Shopify reports..."
+echo "[1/4] Fetching the latest Shopify reports..."
 if ! python run_reports.py >"$run_reports_log" 2>&1; then
   echo "Report fetch failed. See log: $run_reports_log" >&2
   exit 1
@@ -72,27 +72,30 @@ output_dir="$HOME/Desktop/eddy_marketing_insights_${report_number}"
 charts_log="$output_dir/charts_generation.log"
 codex_log="$output_dir/codex_generation.log"
 
-echo "[2/3] Generating charts from $latest_report_dir..."
+echo "[2/4] Generating charts from $latest_report_dir..."
 mkdir -p "$output_dir"
 if ! python src/visualizer.py "$latest_report_dir" >"$charts_log" 2>&1; then
   echo "Chart generation failed. See log: $charts_log" >&2
   exit 1
 fi
 
-echo "[3/3] Asking Codex to write the Markdown report..."
+echo "[3/4] Asking Codex to write the Markdown report..."
 codex exec --cd "$repo_root" --full-auto --color never \
+  -m gpt-5.4 \
+  -c 'model_reasoning_effort="medium"' \
+  --add-dir "$latest_report_dir" \
   --add-dir "$output_dir" \
   --output-last-message "$output_dir/MARKETING_REPORT.md" \
-  "Activate the marketing-analyst skill. Read the newest reports in $latest_report_dir and the generated charts in $output_dir. Use separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels. Include a snapshot, the best and weakest products or themes, the key risks, and the practical implications for Eddy in each section. End with a cross-channel aggregate analysis and concrete recommendations for marketing, design, merchandising, and brand strategy. Use plain English and note when a metric is a heuristic rather than a hard benchmark. Incorporate the generated charts directly in the markdown with relative image embeds (e.g. ![Chart](channel_sales_comparison.png)) and refer to them in the analysis. Return only the Markdown content for the report, with no preamble, no bullet summary about the process, and no extra commentary." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill. Read the newest reports in $latest_report_dir and the generated charts in $output_dir. Use separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels. Include a snapshot, the best and weakest products or themes, the key risks, and the practical implications for Eddy in each section. End with a cross-channel aggregate analysis and concrete recommendations for marketing, design, merchandising, and brand strategy. Use plain English and note when a metric is a heuristic rather than a hard benchmark. Incorporate the generated charts directly in the markdown with relative image embeds (e.g. ![Chart](channel_sales_comparison.png)) and refer to them in the analysis. Use the report-level product image fields (product_image.remote_url and product_image.local_path) to support visual product observations when available, and explicitly note when images are missing or ambiguous. IMPORTANT: when you reference product photos, embed actual markdown images using product_image.local_path (for example: ![Birdie Dress](assets/product_images/online_store/birdie_dress_356688982272.jpg)) instead of plain text paths, and include at most 2 product photo embeds per major channel section to keep the report clean. Return only the Markdown content for the report, with no preamble, no bullet summary about the process, and no extra commentary." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do
   now_ts=$(date +%s)
   elapsed=$((now_ts - start_ts))
-  printf "\r[3/3] Generating report... %ss elapsed" "$elapsed"
+  printf "\r[3/4] Generating report... %ss elapsed" "$elapsed"
   sleep 10
 done
-printf "\r[3/3] Generating report... done.            \n"
+printf "\r[3/4] Generating report... done.            \n"
 
 if ! wait "$codex_pid"; then
   echo "Codex report generation failed. See log: $codex_log" >&2
@@ -101,8 +104,22 @@ fi
 
 if [[ -s "$output_dir/MARKETING_REPORT.md" ]]; then
   append_missing_chart_embeds "$output_dir/MARKETING_REPORT.md" "$output_dir"
-  echo "Done. Report saved to $output_dir/MARKETING_REPORT.md"
-  echo "Logs: $run_reports_log, $charts_log, $codex_log"
+  echo "[4/4] Bundling assets and exporting PDF..."
+  package_log="$output_dir/report_packaging.log"
+  if python scripts/package_marketing_report.py \
+    --markdown "$output_dir/MARKETING_REPORT.md" \
+    --reports-dir "$latest_report_dir" \
+    --output-dir "$output_dir" >"$package_log" 2>&1; then
+    if [[ -s "$output_dir/MARKETING_REPORT.pdf" ]]; then
+      echo "Done. Report saved to $output_dir/MARKETING_REPORT.md and $output_dir/MARKETING_REPORT.pdf"
+    else
+      echo "Done. Report saved to $output_dir/MARKETING_REPORT.md (PDF was skipped; see $package_log)"
+    fi
+  else
+    echo "Report markdown created, but packaging/PDF export had issues. See log: $package_log" >&2
+    echo "Report saved to $output_dir/MARKETING_REPORT.md"
+  fi
+  echo "Logs: $run_reports_log, $charts_log, $codex_log, $package_log"
 else
   echo "Codex finished, but MARKETING_REPORT.md was not created or is empty." >&2
   exit 1

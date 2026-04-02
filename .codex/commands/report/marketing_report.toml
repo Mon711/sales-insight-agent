@@ -9,6 +9,8 @@ prompt = """
 5. Synthesize the findings into one professional Markdown report.
    - Include separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels.
    - For each channel, cover snapshot metrics, product winners, friction points, and the implications for Eddy.
+   - Use `product_image.remote_url` and `product_image.local_path` from report rows whenever available to support visual product commentary; call out missing/ambiguous image matches explicitly.
+   - When referencing product images, use actual markdown image embeds from `product_image.local_path` (for example: `![Birdie Dress](assets/product_images/online_store/birdie_dress_356688982272.jpg)`) rather than plain text file paths. Keep product photo embeds to at most 2 per major channel section.
    - Embed the generated chart PNG files in the markdown using relative image links (for example: `![Channel Sales Comparison](channel_sales_comparison.png)`), and mention chart-based takeaways in the analysis.
    - End with a cross-channel aggregate analysis and concrete recommendations for marketing, design, merchandising, and brand strategy.
    - Use plain English, explain any jargon, and explicitly note when a metric is a heuristic rather than a hard benchmark.
