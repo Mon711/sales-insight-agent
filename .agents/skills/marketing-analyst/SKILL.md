@@ -15,6 +15,10 @@ Produce one Markdown report that:
 - explains what the numbers mean in plain English
 - includes product images inline where the product is analyzed
 - embeds only local image paths (no CDN image links)
+- includes full query-result tables for:
+  - Top 20 performers
+  - Top 20 underperformers
+  - Top 20 categories
 - ends with concrete recommendations by function (marketing, design, merchandising)
 
 ## Source Of Truth
@@ -44,6 +48,7 @@ Produce one Markdown report that:
 5. Keep image count controlled:
    - Must include visuals for products in `top_5_products` and `bottom_5_products` when local paths exist.
    - You may analyze additional products/images where local image paths exist and it improves the analysis.
+6. Include complete query-result tables in Markdown for each of the three report slices.
 
 ## Analysis Rules
 
@@ -55,6 +60,8 @@ Produce one Markdown report that:
 - Use `average_selling_price` from JSON when available; otherwise compute as `net_sales / net_items_sold`.
 - Distinguish product-level findings from category-level findings.
 - If image match status is `ambiguous`, `not_found`, `skipped`, or missing `local_path`, avoid visual claims for that product.
+- When inferring fabric/material or construction cues from photos, explicitly label it as visual inference.
+- Ground recommendations in observed report patterns and practical industry standards.
 
 ## Report Structure
 
@@ -63,7 +70,8 @@ Produce one Markdown report that:
 3. Top 20 Performers
 4. Top 20 Underperformers
 5. Top 20 Categories
-6. Recommendations and Next Actions
+6. Query Result Tables
+7. Recommendations and Next Actions
 
 ## Writing Style
 

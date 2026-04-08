@@ -53,7 +53,7 @@ codex exec --cd "$repo_root" --full-auto --color never \
   -c 'model_reasoning_effort="medium"' \
   --add-dir "$latest_report_dir" \
   --output-last-message "$output_dir/ANNUAL_REPORT_2025.md" \
-  "Activate the marketing-analyst skill. Read annual_report_2025.json from $latest_report_dir and write a concise executive report for 2025 with sections for Top 20 Performers, Top 20 Underperformers, and Top 20 Categories. Use only local image paths for embeds (product_image.local_path). Never use CDN URLs. If an image local_path is missing, do not embed an image for that product. Use product_image_focus.top_5_products and product_image_focus.bottom_5_products as required visual anchors, and place those images inline near the analysis for the exact products being discussed rather than in a separate gallery. You may analyze additional products/images from top_performers.rows and underperformers.rows when local images exist and that improves insight quality. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill. Read annual_report_2025.json from $latest_report_dir. Write a concise executive report with sections for Top 20 Performers, Top 20 Underperformers, and Top 20 Categories. Add deeper interpretation of dress/category performance, include visual fabric/style inference where appropriate (label as inference), and include stronger marketing recommendations tied to the report numbers and practical industry standards. Use only local image paths for embeds (product_image.local_path). Never use CDN URLs. If an image local_path is missing, do not embed an image for that product. Use product_image_focus.top_5_products and product_image_focus.bottom_5_products as required visual anchors, and place those images inline near the analysis for the exact products being discussed rather than in a separate gallery. You may analyze additional products/images from top_performers.rows and underperformers.rows when local images exist and that improves insight quality. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do
@@ -71,6 +71,14 @@ fi
 
 if [[ ! -s "$output_dir/ANNUAL_REPORT_2025.md" ]]; then
   echo "Codex finished, but ANNUAL_REPORT_2025.md was not created or is empty." >&2
+  exit 1
+fi
+
+echo "[2.5/3] Ensuring query result tables are included..."
+if ! python scripts/ensure_annual_tables.py \
+  --markdown "$output_dir/ANNUAL_REPORT_2025.md" \
+  --annual-json "$annual_json"; then
+  echo "Failed to inject annual query tables into markdown." >&2
   exit 1
 fi
 
