@@ -322,7 +322,11 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             image_path = (markdown_path.parent / image_target).resolve()
             if image_path.exists():
                 rl_image = RLImage(str(image_path))
+                normalized_target = image_target.replace("\\", "/").lower()
                 max_width = 7.0 * inch
+                # Keep product photos compact in PDF sections to avoid oversized pages.
+                if "product_images/" in normalized_target:
+                    max_width = 2.4 * inch
                 if rl_image.drawWidth > max_width:
                     ratio = max_width / rl_image.drawWidth
                     rl_image.drawWidth = max_width

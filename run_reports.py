@@ -2,11 +2,11 @@
 """
 The main entry point for the Sales Insight Agent.
 
-This script orchestrates the entire reporting process:
+This script orchestrates the annual reporting process:
 1. Connects to Shopify.
-2. Identifies active sales channels.
-3. Fetches detailed product-wise data.
-4. Saves organized JSON files into numbered generation folders.
+2. Fetches annual product/category data.
+3. Enriches product rows with images.
+4. Saves manager JSON output into numbered generation folders.
 """
 
 import os
@@ -17,13 +17,16 @@ from datetime import datetime, timezone
 
 # We import our specialized tools from the 'src' folder
 from src.shopify_client import ShopifyGraphQLClient
-from src.product_reports import run_all_product_reports
-from src.config import REPORT_SINCE, REPORT_UNTIL
+from src.product_reports import run_annual_report, select_dress_rows
 from src.image_enrichment import (
     TOP_PRODUCTS_IMAGE_LIMIT,
     enrich_channel_product_rows,
     mark_channel_image_enrichment_skipped,
 )
+
+ANNUAL_REPORT_YEAR = 2025
+ANNUAL_REPORT_SINCE = f"{ANNUAL_REPORT_YEAR}-01-01"
+ANNUAL_REPORT_UNTIL = f"{ANNUAL_REPORT_YEAR}-12-31"
 
 
 def get_next_generation_dir(base_dir="reports"):
@@ -58,7 +61,7 @@ def get_next_generation_dir(base_dir="reports"):
 
 def main():
     print("=" * 60)
-    print(f"Shopify Sales Insight Agent — {REPORT_SINCE} to {REPORT_UNTIL}")
+    print(f"Shopify Sales Insight Agent — Annual Report ({ANNUAL_REPORT_YEAR})")
     print("=" * 60)
 
     # --- STEP 0: Create the Output Folder ---
@@ -84,24 +87,14 @@ def main():
         print("⚠ Product API access unavailable. Reports will still run without images.")
         print(f"  Reason: {products_access_error}")
 
-    # --- STEP 2: Discovery (Check what channels are active) ---
-    print("\n[STEP 2] Identifying active sales channels...")
-    try:
-        # We ask Shopify for a high-level list of where sales are coming from
-        channels = client.discover_channels(REPORT_SINCE, REPORT_UNTIL)
-        for row in channels:
-            name = row.get("sales_channel", "Unknown")
-            net = float(row.get("net_sales", 0) or 0)
-            print(f"  - {name}: ${net:,.2f} net sales")
-    except Exception as e:
-        print(f"✗ Discovery failed: {e}")
-        sys.exit(1)
-
     # --- STEP 2.5: Probe ShopifyQL support for product_id ---
     print("\n[STEP 2.5] Checking ShopifyQL support for product_id...")
     include_product_id = False
     try:
-        include_product_id = client.probe_shopifyql_product_id_support(REPORT_SINCE, REPORT_UNTIL)
+        include_product_id = client.probe_shopifyql_product_id_support(
+            ANNUAL_REPORT_SINCE,
+            ANNUAL_REPORT_UNTIL,
+        )
         if include_product_id:
             print("✓ product_id is available in ShopifyQL output (ID-first image matching enabled)")
         else:
@@ -111,86 +104,110 @@ def main():
         print("  Falling back to title-based image matching only.")
         include_product_id = False
 
-    # --- STEP 3: Run Product-Wise Reports ---
-    print("\n[STEP 3] Fetching detailed product data...")
+    annual_report_data = None
+    print(f"\n[STEP 3] Fetching annual report data ({ANNUAL_REPORT_YEAR})...")
     try:
-        # This reaches out to Shopify for every product in every channel
-        all_products = run_all_product_reports(client, include_product_id=include_product_id)
+        annual_report_data = run_annual_report(
+            client=client,
+            year=ANNUAL_REPORT_YEAR,
+            include_product_id=include_product_id,
+        )
+        print(
+            "  ✓ Annual report rows: "
+            f"top={len(annual_report_data.get('top_performers', []))}, "
+            f"under={len(annual_report_data.get('underperformers', []))}, "
+            f"categories={len(annual_report_data.get('top_categories', []))}"
+        )
     except Exception as e:
-        print(f"✗ Product report failed: {e}")
+        print(f"  ⚠ Annual report fetch failed: {e}")
         sys.exit(1)
 
     # --- STEP 4: Save the Files ---
-    print("\n[STEP 4] Saving individual JSON files...")
+    print("\n[STEP 4] Saving annual JSON files...")
     
     timestamp = datetime.now(timezone.utc).isoformat()
     saved_count = 0
     product_image_index = []
+    year = int(annual_report_data.get("year", ANNUAL_REPORT_YEAR))
+    since_year = f"{year}-01-01"
+    until_year = f"{year}-12-31"
 
-    for channel_key, product_rows in all_products.items():
-        if not product_rows:
-            continue
+    top_rows = annual_report_data.get("top_performers", [])
+    under_rows = annual_report_data.get("underperformers", [])
+    category_rows = annual_report_data.get("top_categories", [])
 
-        # ShopifyQL with 'WITH TOTALS' appends top-level totals as '__totals' columns to every row.
-        # We take these from the first row and convert them to numbers for clean analysis.
-        summary_row = product_rows[0]
-        summary = {
-            "total_gross_sales": float(summary_row.get("gross_sales__totals") or 0),
-            "total_net_sales": float(summary_row.get("net_sales__totals") or 0),
-            "total_sales": float(summary_row.get("total_sales__totals") or 0),
-            "total_items_sold": float(summary_row.get("net_items_sold__totals") or 0),
-            "total_orders": float(summary_row.get("orders__totals") or 0),
-        }
-        
-        # Special math for Wholesale (estimating revenue at 50% of retail)
-        if channel_key == "wholesale" and summary["total_gross_sales"]:
-            summary["estimated_wholesale_revenue"] = round(summary["total_gross_sales"] / 2, 2)
+    annual_top_limit = min(20, TOP_PRODUCTS_IMAGE_LIMIT)
+    if products_access_ok:
+        top_image_summary, top_image_index_rows = enrich_channel_product_rows(
+            client=client,
+            channel_key=f"annual_top_{year}",
+            product_rows=top_rows,
+            generation_dir=gen_dir,
+            top_limit=annual_top_limit,
+        )
+        under_image_summary, under_image_index_rows = enrich_channel_product_rows(
+            client=client,
+            channel_key=f"annual_under_{year}",
+            product_rows=under_rows,
+            generation_dir=gen_dir,
+            top_limit=annual_top_limit,
+        )
+    else:
+        top_image_summary, top_image_index_rows = mark_channel_image_enrichment_skipped(
+            product_rows=top_rows,
+            reason=f"Product API unavailable: {products_access_error}",
+            top_limit=annual_top_limit,
+        )
+        under_image_summary, under_image_index_rows = mark_channel_image_enrichment_skipped(
+            product_rows=under_rows,
+            reason=f"Product API unavailable: {products_access_error}",
+            top_limit=annual_top_limit,
+        )
 
-        # Clean up each row to remove these extra totals columns before final JSON output
-        for row in product_rows:
-            for key in list(row.keys()):
-                if key.endswith("__totals"):
-                    del row[key]
+    product_image_index.extend(top_image_index_rows)
+    product_image_index.extend(under_image_index_rows)
 
-        if products_access_ok:
-            image_summary, image_index_rows = enrich_channel_product_rows(
-                client=client,
-                channel_key=channel_key,
-                product_rows=product_rows,
-                generation_dir=gen_dir,
-                top_limit=TOP_PRODUCTS_IMAGE_LIMIT,
-            )
-        else:
-            image_summary, image_index_rows = mark_channel_image_enrichment_skipped(
-                product_rows=product_rows,
-                reason=f"Product API unavailable: {products_access_error}",
-                top_limit=TOP_PRODUCTS_IMAGE_LIMIT,
-            )
+    top_5_dresses = select_dress_rows(top_rows, limit=5)
+    bottom_5_dresses = select_dress_rows(under_rows, limit=5)
 
-        product_image_index.extend(image_index_rows)
+    annual_output = {
+        "generated_at": timestamp,
+        "report_period": {"since": since_year, "until": until_year},
+        "report_name": f"annual_performance_{year}",
+        "query_capabilities": annual_report_data.get("query_capabilities", {}),
+        "top_performers": {
+            "query_year": year,
+            "ranking": "net_sales_desc",
+            "image_enrichment_summary": top_image_summary,
+            "rows": top_rows,
+        },
+        "underperformers": {
+            "query_year": year,
+            "ranking": "net_sales_asc",
+            "image_enrichment_summary": under_image_summary,
+            "rows": under_rows,
+        },
+        "top_categories": {
+            "query_year": year,
+            "ranking": "net_sales_desc",
+            "rows": category_rows,
+        },
+        "dress_image_focus": {
+            "top_5_dresses": top_5_dresses,
+            "bottom_5_dresses": bottom_5_dresses,
+            "note": "Dresses selected from product lists for report image embedding.",
+        },
+    }
 
-        # Structure the final data for this specific channel
-        channel_output = {
-            "generated_at": timestamp,
-            "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
-            "channel_name": channel_key,
-            "channel_summary": summary,
-            "image_enrichment_summary": image_summary,
-            "product_sales_performance": product_rows
-        }
-
-        # Build the filename and save it
-        safe_name = channel_key.lower().replace(" ", "_")
-        filename = f"report_{safe_name}_{REPORT_SINCE}_to_{REPORT_UNTIL}.json"
-        output_path = os.path.join(gen_dir, filename)
-        
-        try:
-            with open(output_path, "w") as f:
-                json.dump(channel_output, f, indent=2, default=str)
-            print(f"  ✓ Saved: {filename}")
-            saved_count += 1
-        except Exception as e:
-            print(f"  ✗ Failed to save {filename}: {e}")
+    annual_filename = f"annual_report_{year}.json"
+    annual_path = os.path.join(gen_dir, annual_filename)
+    try:
+        with open(annual_path, "w") as f:
+            json.dump(annual_output, f, indent=2, default=str)
+        print(f"  ✓ Saved: {annual_filename}")
+        saved_count += 1
+    except Exception as e:
+        print(f"  ✗ Failed to save {annual_filename}: {e}")
 
     index_path = os.path.join(gen_dir, "product_image_index.json")
     try:
@@ -198,7 +215,7 @@ def main():
             json.dump(
                 {
                     "generated_at": timestamp,
-                    "report_period": {"since": REPORT_SINCE, "until": REPORT_UNTIL},
+                    "report_period": {"since": since_year, "until": until_year},
                     "top_limit": TOP_PRODUCTS_IMAGE_LIMIT,
                     "entries": product_image_index,
                 },

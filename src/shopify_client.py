@@ -6,7 +6,9 @@ Credentials are read from environment variables — never hardcoded.
 """
 
 import os
+import time
 import requests
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
 
@@ -52,18 +54,60 @@ class ShopifyGraphQLClient:
         if variables:
             payload["variables"] = variables
 
-        try:
-            response = requests.post(self.api_url, json=payload, headers=self.headers)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Failed to connect to Shopify API: {e}")
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.post(self.api_url, json=payload, headers=self.headers, timeout=60)
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise Exception(f"Failed to connect to Shopify API: {e}")
 
-        result = response.json()
+            result = response.json()
+            errors = result.get("errors")
+            if not errors:
+                return result
 
-        if "errors" in result:
-            raise Exception(f"Shopify API returned errors: {result['errors']}")
+            if self._is_throttled_error(errors) and attempt < max_attempts:
+                wait_seconds = self._throttle_wait_seconds(errors, attempt)
+                print(
+                    f"[Shopify throttle] attempt {attempt}/{max_attempts}, "
+                    f"waiting {wait_seconds}s before retry..."
+                )
+                time.sleep(wait_seconds)
+                continue
 
-        return result
+            raise Exception(f"Shopify API returned errors: {errors}")
+
+        raise Exception("Shopify API retry loop exhausted unexpectedly.")
+
+    @staticmethod
+    def _is_throttled_error(errors: Any) -> bool:
+        if not isinstance(errors, list):
+            return False
+        for err in errors:
+            code = (((err or {}).get("extensions") or {}).get("code") or "").upper()
+            if code == "THROTTLED":
+                return True
+        return False
+
+    @staticmethod
+    def _throttle_wait_seconds(errors: List[Dict[str, Any]], attempt: int) -> int:
+        default_wait = min(30, 3 * attempt)
+        for err in errors:
+            extensions = (err or {}).get("extensions") or {}
+            cost = extensions.get("cost") or {}
+            reset_at = cost.get("windowResetAt")
+            if not reset_at:
+                continue
+            try:
+                # Shopify returns UTC ISO timestamps, usually ending with 'Z' or '+00:00'.
+                reset_dt = datetime.fromisoformat(reset_at.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                seconds = int((reset_dt - now_dt).total_seconds()) + 1
+                return max(2, min(60, seconds))
+            except ValueError:
+                continue
+        return default_wait
 
     def run_shopifyql_report(self, shopifyql_query: str) -> Dict[str, Any]:
         """

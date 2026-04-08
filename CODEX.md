@@ -7,5 +7,6 @@ The repo-local Codex helpers live in [`.codex/commands`](/Users/mrinalsood/Devel
 
 The marketing pipeline entry point is the Codex app command `report/marketing_report`.
 For terminal use, run `./scripts/marketing_report.sh`.
+For the annual 2025 product/category report flow, run `./scripts/annual_report_2025.sh`.
 
 Keep this file minimal so it does not drift from `AGENTS.md`.
