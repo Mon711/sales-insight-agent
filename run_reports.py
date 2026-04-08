@@ -6,7 +6,7 @@ This script orchestrates the annual reporting process:
 1. Connects to Shopify.
 2. Fetches annual product/category data.
 3. Enriches product rows with images.
-4. Saves manager JSON output into numbered generation folders.
+4. Saves annual JSON output into numbered generation folders.
 """
 
 import os
@@ -25,9 +25,6 @@ from src.image_enrichment import (
 )
 
 ANNUAL_REPORT_YEAR = 2025
-ANNUAL_REPORT_SINCE = f"{ANNUAL_REPORT_YEAR}-01-01"
-ANNUAL_REPORT_UNTIL = f"{ANNUAL_REPORT_YEAR}-12-31"
-
 
 def get_next_generation_dir(base_dir="reports"):
     """
@@ -87,30 +84,12 @@ def main():
         print("⚠ Product API access unavailable. Reports will still run without images.")
         print(f"  Reason: {products_access_error}")
 
-    # --- STEP 2.5: Probe ShopifyQL support for product_id ---
-    print("\n[STEP 2.5] Checking ShopifyQL support for product_id...")
-    include_product_id = False
-    try:
-        include_product_id = client.probe_shopifyql_product_id_support(
-            ANNUAL_REPORT_SINCE,
-            ANNUAL_REPORT_UNTIL,
-        )
-        if include_product_id:
-            print("✓ product_id is available in ShopifyQL output (ID-first image matching enabled)")
-        else:
-            print("⚠ product_id not available in ShopifyQL output (title fallback will be used)")
-    except Exception as e:
-        print(f"⚠ Could not probe product_id support: {e}")
-        print("  Falling back to title-based image matching only.")
-        include_product_id = False
-
     annual_report_data = None
     print(f"\n[STEP 3] Fetching annual report data ({ANNUAL_REPORT_YEAR})...")
     try:
         annual_report_data = run_annual_report(
             client=client,
             year=ANNUAL_REPORT_YEAR,
-            include_product_id=include_product_id,
         )
         print(
             "  ✓ Annual report rows: "
@@ -174,7 +153,7 @@ def main():
         "generated_at": timestamp,
         "report_period": {"since": since_year, "until": until_year},
         "report_name": f"annual_performance_{year}",
-        "query_capabilities": annual_report_data.get("query_capabilities", {}),
+        "queries": annual_report_data.get("queries", {}),
         "top_performers": {
             "query_year": year,
             "ranking": "net_sales_desc",

@@ -33,13 +33,7 @@ def _to_float(value: Any) -> float:
 
 
 def _sales_score(row: Dict[str, Any], channel_key: str) -> float:
-    if channel_key == "wholesale":
-        return _to_float(
-            row.get("estimated_net_sales")
-            or row.get("gross_sales")
-            or row.get("total_sales")
-        )
-
+    _ = channel_key
     return _to_float(
         row.get("true_net_sales")
         or row.get("net_sales")

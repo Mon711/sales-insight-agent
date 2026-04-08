@@ -412,20 +412,6 @@ class ShopifyGraphQLClient:
 
         return matches
 
-    def discover_channels(self, since: str, until: str) -> List[Dict[str, Any]]:
-        """
-        Fetch a breakdown of all active sales channels in the store.
-        Returns a list of rows with channel names and high-level sales totals.
-        """
-        query = f"FROM sales SHOW sales_channel, net_sales, orders GROUP BY sales_channel SINCE {since} UNTIL {until}"
-        response = self.run_shopifyql_report(query)
-        
-        if response.get("parseErrors"):
-            raise Exception(f"Discovery query error: {response['parseErrors']}")
-            
-        return response.get("tableData", {}).get("rows", [])
-
-
 def test_connection():
     """Verify the Shopify API connection and ShopifyQL access."""
     try:
