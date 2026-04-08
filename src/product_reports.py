@@ -71,14 +71,9 @@ def _annotate_average_selling_price(rows: List[Dict[str, Any]]) -> None:
         row["average_selling_price"] = round((net_sales / items), 2) if items else 0.0
 
 
-def _is_dress_row(row: Dict[str, Any]) -> bool:
-    product_title = str(row.get("product_title") or "").strip().lower()
-    return "dress" in product_title
-
-
-def select_dress_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
-    dresses = [row for row in rows if _is_dress_row(row)]
-    return dresses[: max(0, limit)]
+def select_ranked_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+    """Return the first N rows preserving ranking order from ShopifyQL."""
+    return list(rows[: max(0, limit)])
 
 
 def run_annual_report(

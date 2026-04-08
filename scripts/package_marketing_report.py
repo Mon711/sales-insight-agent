@@ -164,6 +164,11 @@ def _inject_product_image_embeds_for_plain_paths(markdown_text: str) -> Tuple[st
 def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: Path) -> Tuple[int, int, int]:
     text = markdown_path.read_text(encoding="utf-8")
     text, inserted_embeds = _inject_product_image_embeds_for_plain_paths(text)
+    # Enforce local-only image embeds; strip remote CDN links if present.
+    text = IMAGE_LINK_PATTERN.sub(
+        lambda m: m.group(0) if not _is_remote_target(_extract_target(m.group(2))) else f"[Image not embedded locally: {m.group(1) or 'Product'}]",
+        text,
+    )
     copied_count = 0
     rewritten_count = 0
 

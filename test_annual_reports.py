@@ -3,7 +3,7 @@ import unittest
 from src.product_reports import (
     build_annual_categories_query,
     build_annual_products_query,
-    select_dress_rows,
+    select_ranked_rows,
 )
 
 
@@ -31,18 +31,27 @@ class TestAnnualReports(unittest.TestCase):
         self.assertIn("SHOW net_sales, net_items_sold", query)
         self.assertIn("ORDER BY net_sales DESC", query)
 
-    def test_select_dress_rows(self):
+    def test_select_ranked_rows(self):
         rows = [
-            {"product_title": "Ariana Dress", "product_type": None},
+            {
+                "product_title": "Ariana Dress",
+                "product_image": {"local_path": None, "remote_url": None},
+            },
             {"product_title": "Linen Top", "product_type": "Top"},
-            {"product_title": "Nina Pant", "product_type": "Dress"},
+            {
+                "product_title": "Summer Dress",
+                "product_image": {"local_path": "assets/product_images/x.jpg", "remote_url": "https://cdn.example/x.jpg"},
+            },
+            {
+                "product_title": "Nina Dress",
+                "product_image": {"local_path": None, "remote_url": "https://cdn.example/y.jpg"},
+            },
             {"product_title": "Skirt", "product_type": "Skirt"},
-            {"product_title": "Summer Dress", "product_type": "Dress"},
         ]
-        selected = select_dress_rows(rows, limit=2)
+        selected = select_ranked_rows(rows, limit=2)
         self.assertEqual(len(selected), 2)
         self.assertEqual(selected[0]["product_title"], "Ariana Dress")
-        self.assertEqual(selected[1]["product_title"], "Summer Dress")
+        self.assertEqual(selected[1]["product_title"], "Linen Top")
 
 
 if __name__ == "__main__":

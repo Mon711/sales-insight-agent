@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 # We import our specialized tools from the 'src' folder
 from src.shopify_client import ShopifyGraphQLClient
-from src.product_reports import run_annual_report, select_dress_rows
+from src.product_reports import run_annual_report, select_ranked_rows
 from src.image_enrichment import (
     TOP_PRODUCTS_IMAGE_LIMIT,
     enrich_channel_product_rows,
@@ -25,13 +25,18 @@ from src.image_enrichment import (
 )
 
 ANNUAL_REPORT_YEAR = 2025
+DEFAULT_REPORTS_BASE_DIR = os.path.expanduser("~/Desktop/annual_report_runs")
 
-def get_next_generation_dir(base_dir="reports"):
+
+def get_next_generation_dir(base_dir: str | None = None):
     """
     Manages the 'reports/' folder.
     It looks at existing folders like 'files_generation_1' and finds the
     next available number, filling in any gaps if a folder was deleted.
     """
+    if base_dir is None:
+        base_dir = os.getenv("REPORTS_BASE_DIR", DEFAULT_REPORTS_BASE_DIR)
+
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
         return os.path.join(base_dir, "files_generation_1")
@@ -146,8 +151,8 @@ def main():
     product_image_index.extend(top_image_index_rows)
     product_image_index.extend(under_image_index_rows)
 
-    top_5_dresses = select_dress_rows(top_rows, limit=5)
-    bottom_5_dresses = select_dress_rows(under_rows, limit=5)
+    top_5_products = select_ranked_rows(top_rows, limit=5)
+    bottom_5_products = select_ranked_rows(under_rows, limit=5)
 
     annual_output = {
         "generated_at": timestamp,
@@ -171,10 +176,10 @@ def main():
             "ranking": "net_sales_desc",
             "rows": category_rows,
         },
-        "dress_image_focus": {
-            "top_5_dresses": top_5_dresses,
-            "bottom_5_dresses": bottom_5_dresses,
-            "note": "Dresses selected from product lists for report image embedding.",
+        "product_image_focus": {
+            "top_5_products": top_5_products,
+            "bottom_5_products": bottom_5_products,
+            "note": "Top and bottom products preserve ShopifyQL rank order.",
         },
     }
 

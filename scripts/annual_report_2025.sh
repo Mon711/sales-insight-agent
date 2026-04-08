@@ -4,18 +4,39 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-tmp_log_dir="$(mktemp -d "${TMPDIR:-/tmp}/annual_report_logs.XXXXXX")"
-run_reports_log="$tmp_log_dir/run_reports.log"
+next_output_number() {
+  local max_num=0
+  while IFS= read -r dir; do
+    local base num
+    base="$(basename "$dir")"
+    num="${base##*_}"
+    if [[ "$num" =~ ^[0-9]+$ ]] && (( num > max_num )); then
+      max_num="$num"
+    fi
+  done < <(find "$HOME/Desktop" -maxdepth 1 -type d -name "eddy_annual_insights_*" 2>/dev/null || true)
 
-echo "[1/3] Fetching latest Shopify reports (including annual 2025 report)..."
-if ! python run_reports.py >"$run_reports_log" 2>&1; then
+  echo $((max_num + 1))
+}
+
+report_number="$(next_output_number)"
+output_dir="$HOME/Desktop/eddy_annual_insights_${report_number}"
+reports_base_dir="$output_dir/report_source"
+
+mkdir -p "$output_dir"
+
+run_reports_log="$output_dir/run_reports.log"
+codex_log="$output_dir/codex_generation.log"
+package_log="$output_dir/report_packaging.log"
+
+echo "[1/3] Fetching latest Shopify annual report data..."
+if ! REPORTS_BASE_DIR="$reports_base_dir" python run_reports.py >"$run_reports_log" 2>&1; then
   echo "Report fetch failed. See log: $run_reports_log" >&2
   exit 1
 fi
 
-latest_report_dir="$(ls -td reports/files_generation_* 2>/dev/null | head -n 1 || true)"
+latest_report_dir="$(find "$reports_base_dir" -maxdepth 1 -type d -name "files_generation_*" | sort -V | tail -n1)"
 if [[ -z "${latest_report_dir:-}" ]]; then
-  echo "No reports/files_generation_* folder found." >&2
+  echo "No files_generation folder found under: $reports_base_dir" >&2
   exit 1
 fi
 
@@ -26,21 +47,13 @@ if [[ ! -f "$annual_json" ]]; then
   exit 1
 fi
 
-report_folder_name="$(basename "$latest_report_dir")"
-report_number="${report_folder_name#files_generation_}"
-output_dir="$HOME/Desktop/eddy_annual_insights_${report_number}"
-codex_log="$output_dir/codex_generation.log"
-package_log="$output_dir/report_packaging.log"
-
-mkdir -p "$output_dir"
-
 echo "[2/3] Asking Codex to write the annual 2025 Markdown report..."
 codex exec --cd "$repo_root" --full-auto --color never \
   -m gpt-5.4 \
   -c 'model_reasoning_effort="medium"' \
   --add-dir "$latest_report_dir" \
   --output-last-message "$output_dir/ANNUAL_REPORT_2025.md" \
-  "Read annual_report_2025.json from $latest_report_dir and generate a concise executive report for 2025. Include sections for Top 20 Performers, Top 20 Underperformers, and Top 20 Categories. Analyze the numbers with practical implications and clear actions. Use whichever return metric fields are available in the rows (for example returned_quantity_rate or returns). Add a dedicated section with product images for top 5 dresses and bottom 5 dresses using dress_image_focus.top_5_dresses and dress_image_focus.bottom_5_dresses. Embed actual markdown images from product_image.local_path and keep the visual section compact and clean. Do not include category images. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill. Read annual_report_2025.json from $latest_report_dir and write a concise executive report for 2025 with sections for Top 20 Performers, Top 20 Underperformers, and Top 20 Categories. Use only local image paths for embeds (product_image.local_path). Never use CDN URLs. If an image local_path is missing, do not embed an image for that product. Use product_image_focus.top_5_products and product_image_focus.bottom_5_products as required visual anchors, and place those images inline near the analysis for the exact products being discussed rather than in a separate gallery. You may analyze additional products/images from top_performers.rows and underperformers.rows when local images exist and that improves insight quality. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do

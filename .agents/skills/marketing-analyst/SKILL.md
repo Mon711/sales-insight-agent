@@ -1,125 +1,80 @@
 ---
 name: marketing-analyst
-description: Create and analyze the Shopify marketing report pipeline for the latest sales data. Use when the user wants a single report with separate channel sections, cross-channel analysis, chart generation, or strategic recommendations from the newest report folder.
+description: Create and analyze the annual Shopify performance report (Top 20 performers, Top 20 underperformers, Top 20 categories) with local product images and practical recommendations.
 ---
 
 # Marketing Analyst Skill
 
-Use this skill to turn the latest Shopify sales exports into one comprehensive report for Eddy.
+Use this skill to produce the annual product-performance report for Eddy from ShopifyQL outputs.
 
 ## Goal
 
 Produce one Markdown report that:
 
-- breaks out each channel separately
-- ends with aggregate cross-channel analysis
-- translates data into plain English
-- gives concrete recommendations for marketing, design, merchandising, and brand leadership
+- analyzes annual Top 20 performers, Top 20 underperformers, and Top 20 categories
+- explains what the numbers mean in plain English
+- includes product images inline where the product is analyzed
+- embeds only local image paths (no CDN image links)
+- ends with concrete recommendations by function (marketing, design, merchandising)
+
+## Source Of Truth
+
+- Primary data file: `annual_report_2025.json`
+- Location: latest `files_generation_X` folder under the run output directory
+- Query strings used for generation are stored under `queries` in the JSON
 
 ## Workflow
 
-1. If the latest `reports/files_generation_X/` folder does not exist yet, run:
+1. If annual report JSON is missing, run:
    ```bash
-   python run_reports.py
+   ./scripts/annual_report_2025.sh
    ```
-2. Find the newest `reports/files_generation_X/` folder.
-3. Run the chart engine:
-   ```bash
-   python src/visualizer.py reports/files_generation_X/
-   ```
-4. Read the JSON reports and generated charts, then produce one complete Markdown report body.
-   - Embed the generated PNG charts in the Markdown using image syntax (for example: `![Channel Sales Comparison](channel_sales_comparison.png)`).
-   - Reference chart takeaways directly inside the channel analysis narrative instead of listing images without explanation.
-   - Use `product_image` fields in product rows (`remote_url`, `local_path`, `status`) to support visual product analysis when available, and clearly note when image matches are missing or ambiguous.
-   - If you cite product photos, embed them as markdown images using `product_image.local_path` (not plain text paths), and limit to at most 2 product photos per major channel section.
-   - Prefer returning Markdown text to the caller so wrapper commands can save the file in the final destination.
-5. If the user wants a terminal-friendly entry point, use `./scripts/marketing_report.sh`.
+2. Read `annual_report_2025.json`.
+3. Validate report scope from JSON:
+   - `top_performers.rows`
+   - `underperformers.rows`
+   - `top_categories.rows`
+   - `product_image_focus.top_5_products`
+   - `product_image_focus.bottom_5_products`
+4. Write one Markdown report body.
+   - Place product images inline near the exact product discussion.
+   - Prefer `product_image.local_path`.
+   - If local image path is absent, do not embed an image for that product.
+   - Never use `product_image.remote_url` in markdown embeds.
+5. Keep image count controlled:
+   - Must include visuals for products in `top_5_products` and `bottom_5_products` when local paths exist.
+   - You may analyze additional products/images where local image paths exist and it improves the analysis.
 
-## Data And Metric Rules
+## Analysis Rules
 
-- Use Shopify-derived data only. Do not invent sample data.
-- Use product images only when `product_image.status` indicates a reliable match; avoid overconfident visual claims when status is `ambiguous`, `not_found`, or `skipped`.
-- Treat `estimated_wholesale_revenue` as the wholesale revenue figure when `net_sales` is zero.
-- Use the available Shopify metrics to compute:
-  - average order value (`AOV = net sales or estimated revenue / total orders`)
-  - discount burden (`abs(discounts) / gross_sales`)
-  - return burden (`abs(returns) / gross_sales`)
-  - product concentration (`top 1`, `top 3`, and `top 5` share where possible)
-  - product-type mix
-- If a metric is distorted by channel mechanics, explain that plainly instead of forcing a false comparison.
-- Do not include customer PII.
-- Explain jargon in plain English.
-
-## Benchmark Lens
-
-Use retail and ecommerce heuristics, not just raw totals:
-
-- High discount dependency suggests pricing or demand friction.
-- High return burden can indicate fit, quality, expectation gaps, or partner mismatch.
-- Strong revenue with weak efficiency suggests poor-quality demand.
-- High concentration in one or two products can be a strength and a risk.
-- Compare each channel by role:
-  - online store: demand capture and conversion
-  - POS: in-person validation, fit, and customer confidence
-  - wholesale: assortment strength and partner fit
-  - dropship/partners: channel economics and assortment discipline
-
-Use heuristic language when needed, and say when something is a rule of thumb rather than a hard benchmark.
+- Use Shopify data only. No synthetic numbers.
+- Keep ranking integrity:
+  - top products are from rank order in `top_performers.rows`
+  - bottom products are from rank order in `underperformers.rows`
+- Use `returned_quantity_rate` as return-rate signal where present.
+- Use `average_selling_price` from JSON when available; otherwise compute as `net_sales / net_items_sold`.
+- Distinguish product-level findings from category-level findings.
+- If image match status is `ambiguous`, `not_found`, `skipped`, or missing `local_path`, avoid visual claims for that product.
 
 ## Report Structure
 
-Use this structure in the final Markdown report:
-
 1. Executive Summary
 2. Methodology and Data Window
-3. Channel Summary Table
-4. Online Store Analysis
-5. POS Analysis
-6. Wholesale Analysis
-7. Dropship / Partner Analysis
-8. Cross-Channel Aggregate Analysis
-9. Strategic Recommendations by Team
-10. Risks, Watchouts, and Next Tests
+3. Top 20 Performers
+4. Top 20 Underperformers
+5. Top 20 Categories
+6. Recommendations and Next Actions
 
-## How Each Channel Section Should Read
+## Writing Style
 
-Each channel section should include:
+- Plain English, concise, action-oriented.
+- For each major claim:
+  - what happened
+  - why it matters
+  - what to do next
+- Recommendations must be specific and owner-oriented (marketing, design, merchandising).
 
-- Snapshot: sales, orders, AOV, items sold, gross/net, efficiency, discount/return burden
-- What is working: hero products, product types, or assortment patterns
-- What is not working: weak sell-through, concentration risk, high discounting, or returns
-- What it means: why the numbers matter for Eddy
-- Actions: 2 to 4 concrete next steps for the right team
+## Output
 
-If a channel has no data in the period, say so and explain what that means.
-
-## Cross-Channel Analysis
-
-At the end, explain:
-
-- which products win across multiple channels
-- which channels reinforce each other and which conflict
-- where the brand is healthy versus over-dependent on a few styles or partners
-- whether revenue quality is improving or simply growing through discounting or wholesale volume
-
-## Recommendation Style
-
-Write recommendations so a non-expert can understand them:
-
-- Start with the observation
-- Explain why it matters
-- Give a specific action
-- Call out which team owns the next step
-
-## Expected Outcome
-
-- One comprehensive Markdown report
-- Separate sections for each channel
-- One aggregate conclusion at the end
-- Clear, useful recommendations for marketing, design, merchandising, and brand leadership
-- Charts generated in `~/Desktop/eddy_marketing_insights_X/` and embedded in `MARKETING_REPORT.md`
-
-## Notes
-
-- Use `generate_graphs_only.py` only as a standalone chart-testing helper, not as part of the main pipeline.
-- The Codex app command `report/marketing_report` and the terminal wrapper `./scripts/marketing_report.sh` should both trigger this flow.
+- Return Markdown only.
+- No preamble, no process notes, no tool logs.
