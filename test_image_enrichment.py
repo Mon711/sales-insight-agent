@@ -92,7 +92,52 @@ class TestImageEnrichment(unittest.TestCase):
             self.assertEqual(image_meta["status"], "enriched")
             self.assertEqual(image_meta["match_method"], "product_id")
             self.assertTrue(image_meta["local_path"])
+            self.assertTrue(image_meta["local_path"].startswith("report_assets/product_images/"))
             self.assertTrue(Path(temp_dir, image_meta["local_path"]).exists())
+
+    def test_resolves_ambiguous_title_with_variant_price(self):
+        rows = [
+            {
+                "product_title": "Ariana Dress",
+                "product_variant_price": 398,
+                "true_net_sales": 1200.0,
+            }
+        ]
+        client = FakeClient(
+            records_by_id={},
+            records_by_title={
+                "Ariana Dress": [
+                    {
+                        "id": "gid://shopify/Product/1",
+                        "title": "Ariana Dress",
+                        "handle": "ariana-dress-blue",
+                        "primary_image": {"url": "https://cdn.example.com/ariana-blue.jpg"},
+                        "variant_prices": ["378", "498"],
+                    },
+                    {
+                        "id": "gid://shopify/Product/2",
+                        "title": "Ariana Dress",
+                        "handle": "ariana-dress-red",
+                        "primary_image": {"url": "https://cdn.example.com/ariana-red.jpg"},
+                        "variant_prices": ["398"],
+                    },
+                ]
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            summary, _ = enrich_channel_product_rows(
+                client=client,
+                channel_key="annual_top_2025",
+                product_rows=rows,
+                generation_dir=temp_dir,
+                top_limit=100,
+                downloader=successful_downloader,
+            )
+
+            self.assertEqual(summary["matched_by_title_rows"], 1)
+            self.assertEqual(rows[0]["product_image"]["status"], "enriched")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "title_exact_variant_price")
 
     def test_marks_ambiguous_when_title_has_multiple_matches(self):
         rows = [

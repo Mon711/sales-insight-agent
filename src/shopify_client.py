@@ -250,11 +250,21 @@ class ShopifyGraphQLClient:
         if not product_id:
             return None
 
+        variant_prices = []
+        variant_nodes = (product_node.get("variants") or {}).get("nodes", [])
+        for variant in variant_nodes:
+            price = variant.get("price")
+            if price in [None, ""]:
+                continue
+            variant_prices.append(str(price))
+
         return {
             "id": product_id,
             "title": product_node.get("title"),
             "handle": product_node.get("handle"),
+            "status": product_node.get("status"),
             "primary_image": self._extract_primary_media_image(product_node),
+            "variant_prices": variant_prices,
         }
 
     def fetch_product_image_records_by_ids(
@@ -287,6 +297,12 @@ class ShopifyGraphQLClient:
                     id
                     title
                     handle
+                    status
+                    variants(first: 50) {
+                        nodes {
+                            price
+                        }
+                    }
                     featuredMedia {
                         __typename
                         ... on MediaImage {
@@ -340,7 +356,7 @@ class ShopifyGraphQLClient:
     def find_product_image_records_by_exact_title(
         self,
         title: str,
-        first: int = 10,
+        first: int = 25,
     ) -> List[Dict[str, Any]]:
         """
         Search products by title and return exact title matches with image metadata.
@@ -359,6 +375,12 @@ class ShopifyGraphQLClient:
                     id
                     title
                     handle
+                    status
+                    variants(first: 50) {
+                        nodes {
+                            price
+                        }
+                    }
                     featuredMedia {
                         __typename
                         ... on MediaImage {

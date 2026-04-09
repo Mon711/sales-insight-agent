@@ -21,26 +21,23 @@ next_output_number() {
 report_number="$(next_output_number)"
 output_dir="$HOME/Desktop/eddy_annual_insights_${report_number}"
 reports_base_dir="$output_dir/report_source"
+report_assets_dir="$output_dir/report_assets"
 
 mkdir -p "$output_dir"
+mkdir -p "$reports_base_dir"
+mkdir -p "$report_assets_dir"
 
 run_reports_log="$output_dir/run_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
 
 echo "[1/3] Fetching latest Shopify annual report data..."
-if ! REPORTS_BASE_DIR="$reports_base_dir" python run_reports.py >"$run_reports_log" 2>&1; then
+if ! REPORTS_BASE_DIR="$reports_base_dir" REPORT_OUTPUT_DIR="$output_dir" python run_reports.py >"$run_reports_log" 2>&1; then
   echo "Report fetch failed. See log: $run_reports_log" >&2
   exit 1
 fi
 
-latest_report_dir="$(find "$reports_base_dir" -maxdepth 1 -type d -name "files_generation_*" | sort -V | tail -n1)"
-if [[ -z "${latest_report_dir:-}" ]]; then
-  echo "No files_generation folder found under: $reports_base_dir" >&2
-  exit 1
-fi
-
-annual_json="$latest_report_dir/annual_report_2025.json"
+annual_json="$reports_base_dir/annual_report_2025.json"
 if [[ ! -f "$annual_json" ]]; then
   echo "Expected annual report not found: $annual_json" >&2
   echo "See log: $run_reports_log" >&2
@@ -51,9 +48,9 @@ echo "[2/3] Asking Codex to write the annual 2025 Markdown report..."
 codex exec --cd "$repo_root" --full-auto --color never \
   -m gpt-5.4 \
   -c 'model_reasoning_effort="medium"' \
-  --add-dir "$latest_report_dir" \
+  --add-dir "$reports_base_dir" \
   --output-last-message "$output_dir/ANNUAL_REPORT_2025.md" \
-  "Activate the marketing-analyst skill. Read annual_report_2025.json from $latest_report_dir. Write a concise executive report with sections for Top 20 Performers, Top 20 Underperformers, and Top 20 Categories. Add deeper interpretation of dress/category performance, include visual fabric/style inference where appropriate (label as inference), and include stronger marketing recommendations tied to the report numbers and practical industry standards. Use only local image paths for embeds (product_image.local_path). Never use CDN URLs. If an image local_path is missing, do not embed an image for that product. Use product_image_focus.top_5_products and product_image_focus.bottom_5_products as required visual anchors, and place those images inline near the analysis for the exact products being discussed rather than in a separate gallery. You may analyze additional products/images from top_performers.rows and underperformers.rows when local images exist and that improves insight quality. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill. Read annual_report_2025.json from $reports_base_dir. Write a concise executive report with these sections: Executive Summary, Methodology And Data Window, Top Performer Insights, Underperformer Insights, Category Insights, and Recommendations And Next Actions. Add deeper interpretation of dress/category performance, include visual fabric/style inference where appropriate (label as inference), and include stronger marketing recommendations tied to the report numbers and practical industry standards. Do not output raw query tables. Do not embed any product images anywhere in the narrative. The pipeline will inject the canonical query tables with thumbnail images separately. You may still use product_image_focus.top_5_products, product_image_focus.bottom_5_products, top_performers.rows, and underperformers.rows as evidence for your analysis. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do
@@ -85,7 +82,7 @@ fi
 echo "[3/3] Bundling assets and exporting PDF..."
 if python scripts/package_marketing_report.py \
   --markdown "$output_dir/ANNUAL_REPORT_2025.md" \
-  --reports-dir "$latest_report_dir" \
+  --reports-dir "$reports_base_dir" \
   --output-dir "$output_dir" \
   --pdf-name "ANNUAL_REPORT_2025.pdf" >"$package_log" 2>&1; then
   if [[ -s "$output_dir/ANNUAL_REPORT_2025.pdf" ]]; then

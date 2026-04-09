@@ -32,6 +32,19 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
+def _money_matches(left: Any, right: Any, tolerance: float = 0.01) -> bool:
+    left_value = _to_float(left)
+    right_value = _to_float(right)
+    return abs(left_value - right_value) <= tolerance
+
+
+def _active_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        record for record in records
+        if (record.get("status") or "").strip().upper() == "ACTIVE"
+    ]
+
+
 def _sales_score(row: Dict[str, Any], channel_key: str) -> float:
     _ = channel_key
     return _to_float(
@@ -150,7 +163,7 @@ def enrich_channel_product_rows(
     """
     download = downloader or _download_image_default
     gen_path = Path(generation_dir).resolve()
-    image_dir = gen_path / "assets" / "product_images" / channel_key
+    image_dir = gen_path / "report_assets" / "product_images" / channel_key
     image_dir.mkdir(parents=True, exist_ok=True)
 
     indexed_rows = list(enumerate(product_rows))
@@ -285,6 +298,34 @@ def enrich_channel_product_rows(
                 return mark_channel_image_enrichment_skipped(product_rows, reason=reason, top_limit=top_limit)
 
         matches = title_cache[title]
+        price_matched_records = [
+            record
+            for record in matches
+            if any(
+                _money_matches(variant_price, row.get("product_variant_price"))
+                for variant_price in (record.get("variant_prices") or [])
+            )
+        ]
+        active_price_matched_records = _active_records(price_matched_records)
+        if len(price_matched_records) == 1:
+            apply_match(
+                row_index,
+                price_matched_records[0],
+                match_method="title_exact_variant_price",
+                match_confidence=0.95,
+            )
+            summary["matched_by_title_rows"] += 1
+            continue
+        if len(active_price_matched_records) == 1:
+            apply_match(
+                row_index,
+                active_price_matched_records[0],
+                match_method="title_exact_variant_price_active",
+                match_confidence=0.97,
+            )
+            summary["matched_by_title_rows"] += 1
+            continue
+
         if len(matches) == 1:
             apply_match(
                 row_index,
@@ -293,12 +334,26 @@ def enrich_channel_product_rows(
                 match_confidence=0.8,
             )
             summary["matched_by_title_rows"] += 1
+        elif len(_active_records(matches)) == 1:
+            apply_match(
+                row_index,
+                _active_records(matches)[0],
+                match_method="title_exact_active",
+                match_confidence=0.9,
+            )
+            summary["matched_by_title_rows"] += 1
         elif len(matches) > 1:
             image_payload["status"] = "ambiguous"
-            image_payload["message"] = "Multiple products matched this title."
-            image_payload["match_method"] = "title_exact"
+            if price_matched_records:
+                image_payload["message"] = "Multiple products matched this title and variant price."
+                image_payload["match_method"] = "title_exact_variant_price"
+            else:
+                image_payload["message"] = "Multiple products matched this title."
+                image_payload["match_method"] = "title_exact"
             image_payload["match_confidence"] = 0.0
-            image_payload["candidate_product_gids"] = [item.get("id") for item in matches]
+            image_payload["candidate_product_gids"] = [
+                item.get("id") for item in (price_matched_records or matches)
+            ]
             summary["ambiguous_rows"] += 1
         else:
             image_payload["status"] = "not_found"

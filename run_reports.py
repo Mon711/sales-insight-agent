@@ -12,7 +12,6 @@ This script orchestrates the annual reporting process:
 import os
 import json
 import sys
-import re
 from datetime import datetime, timezone
 
 # We import our specialized tools from the 'src' folder
@@ -28,37 +27,15 @@ ANNUAL_REPORT_YEAR = 2025
 DEFAULT_REPORTS_BASE_DIR = os.path.expanduser("~/Desktop/annual_report_runs")
 
 
-def get_next_generation_dir(base_dir: str | None = None):
+def get_reports_source_dir(base_dir: str | None = None):
     """
-    Manages the 'reports/' folder.
-    It looks at existing folders like 'files_generation_1' and finds the
-    next available number, filling in any gaps if a folder was deleted.
+    Resolve the JSON output directory for a report run.
     """
     if base_dir is None:
         base_dir = os.getenv("REPORTS_BASE_DIR", DEFAULT_REPORTS_BASE_DIR)
 
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-        return os.path.join(base_dir, "files_generation_1")
-
-    # This regular expression helps us find the numbers in folder names
-    pattern = re.compile(r"^files_generation_(\d+)$")
-    
-    existing_nums = []
-    for d in os.listdir(base_dir):
-        full_path = os.path.join(base_dir, d)
-        if os.path.isdir(full_path):
-            match = pattern.match(d)
-            if match:
-                existing_nums.append(int(match.group(1)))
-
-    # Find the highest number and add 1
-    if existing_nums:
-        next_num = max(existing_nums) + 1
-    else:
-        next_num = 1
-    
-    return os.path.join(base_dir, f"files_generation_{next_num}")
+    os.makedirs(base_dir, exist_ok=True)
+    return base_dir
 
 
 def main():
@@ -67,9 +44,11 @@ def main():
     print("=" * 60)
 
     # --- STEP 0: Create the Output Folder ---
-    gen_dir = get_next_generation_dir()
-    os.makedirs(gen_dir, exist_ok=True)
-    print(f"\n[STEP 0] Saving reports to: {gen_dir}")
+    reports_dir = get_reports_source_dir()
+    output_root_dir = os.getenv("REPORT_OUTPUT_DIR", reports_dir)
+    os.makedirs(output_root_dir, exist_ok=True)
+    print(f"\n[STEP 0] Saving report JSON to: {reports_dir}")
+    print(f"[STEP 0] Saving report assets to: {output_root_dir}")
 
     # --- STEP 1: Connect to Shopify ---
     print("\n[STEP 1] Connecting to Shopify...")
@@ -126,14 +105,14 @@ def main():
             client=client,
             channel_key=f"annual_top_{year}",
             product_rows=top_rows,
-            generation_dir=gen_dir,
+            generation_dir=output_root_dir,
             top_limit=annual_top_limit,
         )
         under_image_summary, under_image_index_rows = enrich_channel_product_rows(
             client=client,
             channel_key=f"annual_under_{year}",
             product_rows=under_rows,
-            generation_dir=gen_dir,
+            generation_dir=output_root_dir,
             top_limit=annual_top_limit,
         )
     else:
@@ -184,7 +163,7 @@ def main():
     }
 
     annual_filename = f"annual_report_{year}.json"
-    annual_path = os.path.join(gen_dir, annual_filename)
+    annual_path = os.path.join(reports_dir, annual_filename)
     try:
         with open(annual_path, "w") as f:
             json.dump(annual_output, f, indent=2, default=str)
@@ -193,7 +172,7 @@ def main():
     except Exception as e:
         print(f"  ✗ Failed to save {annual_filename}: {e}")
 
-    index_path = os.path.join(gen_dir, "product_image_index.json")
+    index_path = os.path.join(reports_dir, "product_image_index.json")
     try:
         with open(index_path, "w") as f:
             json.dump(
@@ -212,7 +191,7 @@ def main():
         print(f"  ✗ Failed to save {os.path.basename(index_path)}: {e}")
 
     print("\n" + "=" * 60)
-    print(f"✓ Success — {saved_count} reports generated in {gen_dir}")
+    print(f"✓ Success — {saved_count} reports generated in {reports_dir}")
     print("=" * 60)
 
 

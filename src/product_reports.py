@@ -71,6 +71,40 @@ def _annotate_average_selling_price(rows: List[Dict[str, Any]]) -> None:
         row["average_selling_price"] = round((net_sales / items), 2) if items else 0.0
 
 
+def _normalize_category_name(raw_value: Any) -> str:
+    cleaned = str(raw_value or "").strip()
+    lowered = cleaned.lower()
+    if lowered in {"dress", "dresses"}:
+        return "Dress"
+    return cleaned or "Uncategorized"
+
+
+def _combine_category_rows(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    combined: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        normalized_name = _normalize_category_name(row.get("product_type"))
+        bucket = combined.setdefault(
+            normalized_name,
+            {
+                "product_type": normalized_name,
+                "net_sales": 0.0,
+                "net_items_sold": 0.0,
+            },
+        )
+        bucket["net_sales"] += _to_float(row.get("net_sales"))
+        bucket["net_items_sold"] += _to_float(row.get("net_items_sold"))
+
+    combined_rows = list(combined.values())
+    combined_rows.sort(key=lambda row: _to_float(row.get("net_sales")), reverse=True)
+
+    for row in combined_rows:
+        row["net_sales"] = round(_to_float(row.get("net_sales")), 2)
+        items_sold = _to_float(row.get("net_items_sold"))
+        row["net_items_sold"] = int(items_sold) if items_sold.is_integer() else round(items_sold, 2)
+
+    return combined_rows[: max(0, limit)]
+
+
 def select_ranked_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
     """Return the first N rows preserving ranking order from ShopifyQL."""
     return list(rows[: max(0, limit)])
@@ -87,7 +121,7 @@ def run_annual_report(
     """
     top_query = build_annual_products_query(year=year, descending=True, limit=limit)
     under_query = build_annual_products_query(year=year, descending=False, limit=limit)
-    categories_query = build_annual_categories_query(year=year, limit=limit)
+    categories_query = build_annual_categories_query(year=year, limit=250)
 
     top_response = client.run_shopifyql_report(top_query)
     under_response = client.run_shopifyql_report(under_query)
@@ -110,6 +144,7 @@ def run_annual_report(
     _clean_totals_columns(category_rows)
     _annotate_average_selling_price(top_rows)
     _annotate_average_selling_price(under_rows)
+    category_rows = _combine_category_rows(category_rows, limit=limit)
 
     return {
         "year": year,

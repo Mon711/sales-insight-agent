@@ -5,8 +5,7 @@ Bundle report assets and export a PDF version of the marketing report.
 This script solves report portability issues by:
 1. Copying the whole reports/assets tree into the Desktop output folder.
 2. Rewriting markdown image links to local relative paths under report_assets/.
-3. Converting plain product-image path mentions into real markdown image embeds.
-4. Rendering a cleaner PDF with section-based page breaks and table support.
+3. Rendering a cleaner PDF with section-based page breaks and table support.
 """
 
 from __future__ import annotations
@@ -25,11 +24,7 @@ HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
 UNORDERED_BULLET_PATTERN = re.compile(r"^\s*[-*]\s+(.+)$")
 ORDERED_BULLET_PATTERN = re.compile(r"^\s*\d+\.\s+(.+)$")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$")
-PRODUCT_IMAGE_PATH_PATTERN = re.compile(
-    r"(assets/product_images/[a-zA-Z0-9_\-./]+\.(?:jpg|jpeg|png|webp|gif|bmp|tif|tiff|avif))"
-)
-
-
+HTML_COMMENT_PATTERN = re.compile(r"^<!--.*-->$")
 def _extract_target(raw_target: str) -> str:
     target = raw_target.strip()
     if target.startswith("<") and target.endswith(">"):
@@ -128,42 +123,9 @@ def _copy_asset_to_output(
     return destination
 
 
-def _inject_product_image_embeds_for_plain_paths(markdown_text: str) -> Tuple[str, int]:
-    """
-    Convert plain `assets/product_images/...` mentions into markdown image embeds.
-    """
-    lines = markdown_text.splitlines()
-    out_lines: List[str] = []
-    inserted = 0
-
-    for line in lines:
-        out_lines.append(line)
-        if "![" in line:
-            continue
-
-        matches = PRODUCT_IMAGE_PATH_PATTERN.findall(line)
-        if not matches:
-            continue
-
-        unique_paths = []
-        seen = set()
-        for path in matches:
-            if path in seen:
-                continue
-            seen.add(path)
-            unique_paths.append(path)
-
-        for path in unique_paths:
-            filename = Path(path).stem.replace("_", " ").strip() or "Product Image"
-            out_lines.append(f"![{filename}]({path})")
-            inserted += 1
-
-    return "\n".join(out_lines), inserted
-
-
 def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: Path) -> Tuple[int, int, int]:
     text = markdown_path.read_text(encoding="utf-8")
-    text, inserted_embeds = _inject_product_image_embeds_for_plain_paths(text)
+    inserted_embeds = 0
     # Enforce local-only image embeds; strip remote CDN links if present.
     text = IMAGE_LINK_PATTERN.sub(
         lambda m: m.group(0) if not _is_remote_target(_extract_target(m.group(2))) else f"[Image not embedded locally: {m.group(1) or 'Product'}]",
@@ -211,6 +173,69 @@ def _inline_markdown_to_paragraph_html(text: str) -> str:
     return escaped
 
 
+def _build_table_image_cell(image_target: str, markdown_path: Path, max_size: float):
+    from reportlab.platypus import Image as RLImage
+
+    image_path = (markdown_path.parent / image_target).resolve()
+    if not image_path.exists():
+        return None
+
+    rl_image = RLImage(str(image_path))
+    width_ratio = max_size / rl_image.drawWidth if rl_image.drawWidth else 1
+    height_ratio = max_size / rl_image.drawHeight if rl_image.drawHeight else 1
+    scale_ratio = min(width_ratio, height_ratio, 1)
+    rl_image.drawWidth *= scale_ratio
+    rl_image.drawHeight *= scale_ratio
+    return rl_image
+
+
+def _build_table_cell(cell_text: str, paragraph_style, markdown_path: Path, image_max_size: float):
+    from reportlab.platypus import Paragraph
+
+    stripped = cell_text.strip()
+    image_match = IMAGE_LINK_PATTERN.fullmatch(stripped)
+    if image_match:
+        image_target = _extract_target(image_match.group(2))
+        image_cell = _build_table_image_cell(image_target, markdown_path, image_max_size)
+        if image_cell is not None:
+            return image_cell
+    return Paragraph(_inline_markdown_to_paragraph_html(cell_text), paragraph_style)
+
+
+def _table_col_widths(headers: List[str], inch_value: float):
+    normalized = [header.strip().lower() for header in headers]
+    if normalized == [
+        "image",
+        "rank",
+        "product title",
+        "variant price",
+        "net sales",
+        "net items sold",
+        "gross sales",
+        "average order value",
+        "returned quantity rate",
+    ]:
+        return [
+            0.58 * inch_value,
+            0.34 * inch_value,
+            1.65 * inch_value,
+            0.62 * inch_value,
+            0.68 * inch_value,
+            0.70 * inch_value,
+            0.70 * inch_value,
+            0.82 * inch_value,
+            0.76 * inch_value,
+        ]
+    if normalized == ["rank", "category", "net sales", "net items sold"]:
+        return [
+            0.40 * inch_value,
+            3.05 * inch_value,
+            1.05 * inch_value,
+            1.10 * inch_value,
+        ]
+    return None
+
+
 def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
     try:
         from reportlab.lib import colors
@@ -252,6 +277,18 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
         rightIndent=8,
         borderPadding=6,
     )
+    table_body_style = ParagraphStyle(
+        "TableBody",
+        parent=body_style,
+        fontSize=7.2,
+        leading=8.6,
+        spaceAfter=0,
+    )
+    table_header_style = ParagraphStyle(
+        "TableHeader",
+        parent=table_body_style,
+        fontName="Helvetica-Bold",
+    )
 
     flowables = []
     in_code_block = False
@@ -279,6 +316,10 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             i += 1
             continue
 
+        if HTML_COMMENT_PATTERN.match(stripped):
+            i += 1
+            continue
+
         if stripped.startswith("|") and i + 1 < len(lines) and TABLE_SEPARATOR_PATTERN.match(lines[i + 1].strip()):
             header_cells = _split_markdown_table_row(lines[i])
             table_rows: List[List[str]] = [header_cells]
@@ -289,29 +330,52 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
 
             col_count = len(header_cells)
             normalized_rows = []
-            for row in table_rows:
+            for row_index, row in enumerate(table_rows):
                 if len(row) < col_count:
                     row = row + [""] * (col_count - len(row))
                 elif len(row) > col_count:
                     row = row[:col_count]
+                paragraph_style = table_header_style if row_index == 0 else table_body_style
                 normalized_rows.append(
-                    [Paragraph(_inline_markdown_to_paragraph_html(cell), body_style) for cell in row]
+                    [
+                        _build_table_cell(
+                            cell,
+                            paragraph_style,
+                            markdown_path,
+                            image_max_size=0.42 * inch,
+                        )
+                        for cell in row
+                    ]
                 )
 
-            table = Table(normalized_rows, repeatRows=1, hAlign="LEFT")
+            table = Table(
+                normalized_rows,
+                colWidths=_table_col_widths(header_cells, inch),
+                repeatRows=1,
+                hAlign="LEFT",
+            )
             table.setStyle(
                 TableStyle(
                     [
                         ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
                         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f6f8")),
                         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                        ("TOPPADDING", (0, 0), (-1, -1), 4),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                        ("TOPPADDING", (0, 0), (-1, -1), 3),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                     ]
                 )
             )
+            if header_cells and header_cells[0].strip().lower() == "image":
+                table.setStyle(
+                    TableStyle(
+                        [
+                            ("ALIGN", (0, 1), (0, -1), "CENTER"),
+                            ("VALIGN", (0, 1), (0, -1), "MIDDLE"),
+                        ]
+                    )
+                )
             flowables.append(table)
             flowables.append(Spacer(1, 0.10 * inch))
             continue
@@ -328,10 +392,10 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             if image_path.exists():
                 rl_image = RLImage(str(image_path))
                 normalized_target = image_target.replace("\\", "/").lower()
-                max_width = 7.0 * inch
-                # Keep product photos compact in PDF sections to avoid oversized pages.
                 if "product_images/" in normalized_target:
-                    max_width = 2.4 * inch
+                    i += 1
+                    continue
+                max_width = 7.0 * inch
                 if rl_image.drawWidth > max_width:
                     ratio = max_width / rl_image.drawWidth
                     rl_image.drawWidth = max_width
@@ -392,7 +456,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bundle markdown assets and export a PDF report.")
     parser.add_argument("--markdown", required=True, help="Path to MARKETING_REPORT.md")
-    parser.add_argument("--reports-dir", required=True, help="Path to reports/files_generation_N")
+    parser.add_argument("--reports-dir", required=True, help="Path to report_source")
     parser.add_argument("--output-dir", required=True, help="Path to Desktop output folder")
     parser.add_argument("--pdf-name", default="MARKETING_REPORT.pdf", help="Output PDF filename")
     args = parser.parse_args()

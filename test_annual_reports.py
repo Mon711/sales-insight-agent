@@ -1,6 +1,7 @@
 import unittest
 
 from src.product_reports import (
+    _combine_category_rows,
     build_annual_categories_query,
     build_annual_products_query,
     select_ranked_rows,
@@ -40,7 +41,7 @@ class TestAnnualReports(unittest.TestCase):
             {"product_title": "Linen Top", "product_type": "Top"},
             {
                 "product_title": "Summer Dress",
-                "product_image": {"local_path": "assets/product_images/x.jpg", "remote_url": "https://cdn.example/x.jpg"},
+                "product_image": {"local_path": "report_assets/product_images/x.jpg", "remote_url": "https://cdn.example/x.jpg"},
             },
             {
                 "product_title": "Nina Dress",
@@ -52,6 +53,20 @@ class TestAnnualReports(unittest.TestCase):
         self.assertEqual(len(selected), 2)
         self.assertEqual(selected[0]["product_title"], "Ariana Dress")
         self.assertEqual(selected[1]["product_title"], "Linen Top")
+
+    def test_combine_category_rows_merges_dress_and_dresses(self):
+        rows = [
+            {"product_type": "Dress", "net_sales": 100.0, "net_items_sold": 1},
+            {"product_type": "Dresses", "net_sales": 200.0, "net_items_sold": 2},
+            {"product_type": "Skirts", "net_sales": 50.0, "net_items_sold": 1},
+        ]
+
+        combined = _combine_category_rows(rows, limit=20)
+
+        self.assertEqual(combined[0]["product_type"], "Dress")
+        self.assertEqual(combined[0]["net_sales"], 300.0)
+        self.assertEqual(combined[0]["net_items_sold"], 3)
+        self.assertEqual(combined[1]["product_type"], "Skirts")
 
 
 if __name__ == "__main__":
