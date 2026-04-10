@@ -30,6 +30,8 @@ mkdir -p "$report_assets_dir"
 run_reports_log="$output_dir/run_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
+codex_model="${ANNUAL_REPORT_MODEL:-gpt-5-mini}"
+codex_reasoning_effort="${ANNUAL_REPORT_REASONING_EFFORT:-low}"
 
 echo "[1/3] Fetching latest Shopify annual report data..."
 if ! REPORTS_BASE_DIR="$reports_base_dir" REPORT_OUTPUT_DIR="$output_dir" python run_reports.py >"$run_reports_log" 2>&1; then
@@ -46,11 +48,11 @@ fi
 
 echo "[2/3] Asking Codex to write the annual 2025 Markdown report..."
 codex exec --cd "$repo_root" --full-auto --color never \
-  -m gpt-5.4 \
-  -c 'model_reasoning_effort="medium"' \
+  -m "$codex_model" \
+  -c "model_reasoning_effort=\"$codex_reasoning_effort\"" \
   --add-dir "$reports_base_dir" \
   --output-last-message "$output_dir/ANNUAL_REPORT_2025.md" \
-  "Activate the marketing-analyst skill. Read annual_report_2025.json from $reports_base_dir. Write a concise executive report with these sections: Executive Summary, Methodology And Data Window, Top Performer Insights, Underperformer Insights, Category Insights, and Recommendations And Next Actions. Add deeper interpretation of dress/category performance, include visual fabric/style inference where appropriate (label as inference), and include stronger marketing recommendations tied to the report numbers and practical industry standards. Do not output raw query tables. Do not embed any product images anywhere in the narrative. The pipeline will inject the canonical query tables with thumbnail images separately. You may still use product_image_focus.top_5_products, product_image_focus.bottom_5_products, top_performers.rows, and underperformers.rows as evidence for your analysis. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill for analysis and the pdf-stylist skill for the final PDF-ready rewrite. Read annual_report_2025.json from $reports_base_dir. Write a concise executive report with these sections: Executive Summary, Methodology And Data Window, Top Performer Insights, Underperformer Insights, Category Insights, and Recommendations And Next Actions. Use a clean executive layout with one title, H2 major sections, H3 mini-insights, short paragraphs, and bullet-led takeaways. Add deeper interpretation of dress/category performance, include visual fabric/style inference where appropriate (label as inference), and include stronger marketing recommendations tied to the report numbers and practical industry standards. Do not output raw query tables. Do not embed any product images anywhere in the narrative. The pipeline will inject the canonical query tables with thumbnail images separately. You may still use product_image_focus.top_5_products, product_image_focus.bottom_5_products, top_performers.rows, and underperformers.rows as evidence for your analysis. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do

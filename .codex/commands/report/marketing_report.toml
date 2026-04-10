@@ -1,12 +1,14 @@
 description = "Generate a marketing analysis report from the latest sales data"
 prompt = """
-1. Activate the `$marketing-analyst` skill.
+1. Activate the `$marketing-analyst` skill for analysis and the `$pdf-stylist` skill for the final PDF-ready rewrite.
 2. Run the sales pipeline so the newest JSON reports exist:
    !{python run_reports.py}
 3. Find the latest `reports/files_generation_X/` folder.
 4. Run the visualization engine:
    !{python src/visualizer.py reports/files_generation_X/}
 5. Synthesize the findings into one professional Markdown report.
+   - Use a clean executive layout with one title, H2 major sections, H3 mini-insights, short paragraphs, and bullet-led takeaways.
+   - Keep each section scannable and insight-first.
    - Include separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels.
    - For each channel, cover snapshot metrics, product winners, friction points, and the implications for Eddy.
    - Use `product_image.remote_url` and `product_image.local_path` from report rows whenever available to support visual product commentary; call out missing/ambiguous image matches explicitly.

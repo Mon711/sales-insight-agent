@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF Stylist"
+  short_description: "Turn reports into polished executive PDFs"
+  default_prompt: "Use $pdf-stylist to turn raw report data into a polished executive PDF with a clear layout, tables, and page-break discipline."
