@@ -15,16 +15,17 @@ class TestAnnualReports(unittest.TestCase):
         self.assertIn("FROM sales", query)
         self.assertIn("SHOW net_sales, net_items_sold, gross_sales, average_order_value", query)
         self.assertIn("returned_quantity_rate", query)
-        self.assertIn("WHERE product_title IS NOT NULL", query)
-        self.assertIn("GROUP BY product_title, product_variant_price WITH TOTALS", query)
+        self.assertIn("WHERE product_variant_title IS NOT NULL", query)
+        self.assertIn("GROUP BY product_title WITH TOTALS", query)
         self.assertIn("SINCE 2025-01-01 UNTIL 2025-12-31", query)
         self.assertIn("ORDER BY net_sales DESC", query)
         self.assertIn("LIMIT 20", query)
+        self.assertIn("VISUALIZE net_sales TYPE list", query)
 
     def test_build_annual_products_query_asc(self):
         query = build_annual_products_query(year=2025, descending=False)
         self.assertIn("ORDER BY net_sales ASC", query)
-        self.assertNotIn("product_id", query)
+        self.assertIn("VISUALIZE net_sales TYPE list", query)
 
     def test_build_annual_categories_query(self):
         query = build_annual_categories_query(year=2025, limit=20)

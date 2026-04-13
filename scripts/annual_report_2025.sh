@@ -47,6 +47,8 @@ if [[ ! -f "$annual_json" ]]; then
 fi
 
 echo "[2/3] Asking Codex to write the annual 2025 Markdown report..."
+# This launches a separate Codex job; `-m` selects the model for that Codex run.
+echo "Using Codex model: $codex_model (reasoning effort: $codex_reasoning_effort)"
 codex exec --cd "$repo_root" --full-auto --color never \
   -m "$codex_model" \
   -c "model_reasoning_effort=\"$codex_reasoning_effort\"" \

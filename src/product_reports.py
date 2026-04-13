@@ -23,11 +23,12 @@ def build_annual_products_query(*, year: int, descending: bool = True, limit: in
         FROM sales
           SHOW net_sales, net_items_sold, gross_sales, average_order_value,
             returned_quantity_rate
-          WHERE product_title IS NOT NULL
-          GROUP BY product_title, product_variant_price WITH TOTALS
+          WHERE product_variant_title IS NOT NULL
+          GROUP BY product_title WITH TOTALS
           SINCE {since} UNTIL {until}
           ORDER BY net_sales {direction}
           LIMIT {limit}
+        VISUALIZE net_sales TYPE list
     """
 
 
