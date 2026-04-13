@@ -100,15 +100,20 @@ def _top_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[List[Any]]:
     return output
 
 
-def _category_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[List[Any]]:
+def _dress_variant_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[List[Any]]:
     output: List[List[Any]] = []
     for idx, row in enumerate(rows[:limit], start=1):
         output.append(
             [
+                _product_image_cell(row),
                 idx,
-                row.get("product_type") or "Uncategorized",
+                row.get("product_title"),
+                row.get("product_variant_family") or row.get("product_variant_title") or "Unspecified",
                 _fmt_currency(row.get("net_sales")),
                 _fmt_number(row.get("net_items_sold")),
+                _fmt_currency(row.get("gross_sales")),
+                _fmt_currency(row.get("average_order_value")),
+                _fmt_currency(row.get("returns")),
             ]
         )
     return output
@@ -117,7 +122,9 @@ def _category_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[List[Any
 def _render_tables_block(data: Dict[str, Any]) -> str:
     top = (data.get("top_performers") or {}).get("rows") or []
     under = (data.get("underperformers") or {}).get("rows") or []
-    categories = (data.get("top_categories") or {}).get("rows") or []
+    dress_variant_families = data.get("dress_variant_families") or {}
+    dress_variant_top = dress_variant_families.get("top_rows") or []
+    dress_variant_bottom = dress_variant_families.get("bottom_rows") or []
 
     top_table = _table(
         ["Image", "Rank", "Product title", "Variant price", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
@@ -127,9 +134,13 @@ def _render_tables_block(data: Dict[str, Any]) -> str:
         ["Image", "Rank", "Product title", "Variant price", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
         _top_rows(under, limit=20),
     )
-    category_table = _table(
-        ["Rank", "Category", "Net sales", "Net items sold"],
-        _category_rows(categories, limit=20),
+    dress_variant_top_table = _table(
+        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returns"],
+        _dress_variant_rows(dress_variant_top, limit=20),
+    )
+    dress_variant_bottom_table = _table(
+        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returns"],
+        _dress_variant_rows(dress_variant_bottom, limit=20),
     )
 
     return (
@@ -139,8 +150,10 @@ def _render_tables_block(data: Dict[str, Any]) -> str:
         f"{top_table}\n\n"
         "## Top 20 Underperformers\n\n"
         f"{under_table}\n\n"
-        "## Top 20 Categories\n\n"
-        f"{category_table}\n"
+        "## Top 20 Dress Variant Families\n\n"
+        f"{dress_variant_top_table}\n\n"
+        "## Bottom 20 Dress Variant Families\n\n"
+        f"{dress_variant_bottom_table}\n"
         f"{END_MARKER}\n"
     )
 

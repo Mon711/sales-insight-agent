@@ -30,7 +30,7 @@ mkdir -p "$report_assets_dir"
 run_reports_log="$output_dir/run_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
-codex_model="${ANNUAL_REPORT_MODEL:-gpt-5-mini}"
+codex_model="${ANNUAL_REPORT_MODEL:-gpt-5.2-codex}"
 codex_reasoning_effort="${ANNUAL_REPORT_REASONING_EFFORT:-low}"
 
 echo "[1/3] Fetching latest Shopify annual report data..."

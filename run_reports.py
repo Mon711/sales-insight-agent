@@ -4,7 +4,7 @@ The main entry point for the Sales Insight Agent.
 
 This script orchestrates the annual reporting process:
 1. Connects to Shopify.
-2. Fetches annual product/category data.
+2. Fetches annual product and dress-variant data.
 3. Enriches product rows with images.
 4. Saves annual JSON output into numbered generation folders.
 """
@@ -79,7 +79,7 @@ def main():
             "  ✓ Annual report rows: "
             f"top={len(annual_report_data.get('top_performers', []))}, "
             f"under={len(annual_report_data.get('underperformers', []))}, "
-            f"categories={len(annual_report_data.get('top_categories', []))}"
+            f"dress_variants={len(annual_report_data.get('dress_variant_families', {}).get('rows', []))}"
         )
     except Exception as e:
         print(f"  ⚠ Annual report fetch failed: {e}")
@@ -97,7 +97,10 @@ def main():
 
     top_rows = annual_report_data.get("top_performers", [])
     under_rows = annual_report_data.get("underperformers", [])
-    category_rows = annual_report_data.get("top_categories", [])
+    dress_variant_families = annual_report_data.get("dress_variant_families", {})
+    dress_variant_rows = dress_variant_families.get("rows", [])
+    dress_variant_top_rows = dress_variant_families.get("top_rows", [])
+    dress_variant_bottom_rows = dress_variant_families.get("bottom_rows", [])
 
     annual_top_limit = min(20, TOP_PRODUCTS_IMAGE_LIMIT)
     if products_access_ok:
@@ -130,6 +133,38 @@ def main():
     product_image_index.extend(top_image_index_rows)
     product_image_index.extend(under_image_index_rows)
 
+    if products_access_ok:
+        dress_top_image_summary, dress_top_image_index_rows = enrich_channel_product_rows(
+            client=client,
+            channel_key=f"annual_dress_variant_top_{year}",
+            product_rows=dress_variant_top_rows,
+            generation_dir=output_root_dir,
+            top_limit=20,
+        )
+        dress_bottom_image_summary, dress_bottom_image_index_rows = enrich_channel_product_rows(
+            client=client,
+            channel_key=f"annual_dress_variant_bottom_{year}",
+            product_rows=dress_variant_bottom_rows,
+            generation_dir=output_root_dir,
+            top_limit=20,
+        )
+    else:
+        dress_top_image_summary, dress_top_image_index_rows = mark_channel_image_enrichment_skipped(
+            product_rows=dress_variant_top_rows,
+            reason=f"Product API unavailable: {products_access_error}",
+            top_limit=20,
+        )
+        dress_bottom_image_summary, dress_bottom_image_index_rows = mark_channel_image_enrichment_skipped(
+            product_rows=dress_variant_bottom_rows,
+            reason=f"Product API unavailable: {products_access_error}",
+            top_limit=20,
+        )
+
+    product_image_index.extend(dress_top_image_index_rows)
+    product_image_index.extend(dress_bottom_image_index_rows)
+
+    top_20_products = select_ranked_rows(top_rows, limit=20)
+    bottom_20_products = select_ranked_rows(under_rows, limit=20)
     top_5_products = select_ranked_rows(top_rows, limit=5)
     bottom_5_products = select_ranked_rows(under_rows, limit=5)
 
@@ -143,22 +178,33 @@ def main():
             "ranking": "net_sales_desc",
             "image_enrichment_summary": top_image_summary,
             "rows": top_rows,
+            "top_20_rows": top_20_products,
         },
         "underperformers": {
             "query_year": year,
             "ranking": "net_sales_asc",
             "image_enrichment_summary": under_image_summary,
             "rows": under_rows,
+            "bottom_20_rows": bottom_20_products,
         },
-        "top_categories": {
+        "dress_variant_families": {
             "query_year": year,
-            "ranking": "net_sales_desc",
-            "rows": category_rows,
+            "ranking": "grouped_variant_net_sales_desc",
+            "rows": dress_variant_rows,
+            "top_rows": dress_variant_top_rows,
+            "bottom_rows": dress_variant_bottom_rows,
+            "top_image_enrichment_summary": dress_top_image_summary,
+            "bottom_image_enrichment_summary": dress_bottom_image_summary,
+            "note": "Grouped by product title plus normalized variant family after stripping size-only segments.",
         },
         "product_image_focus": {
+            "top_20_products": top_20_products,
+            "bottom_20_products": bottom_20_products,
             "top_5_products": top_5_products,
             "bottom_5_products": bottom_5_products,
-            "note": "Top and bottom products preserve ShopifyQL rank order.",
+            "top_20_dress_variants": dress_variant_top_rows,
+            "bottom_20_dress_variants": dress_variant_bottom_rows,
+            "note": "Top and bottom products preserve ShopifyQL rank order; dress variant families are grouped by normalized size-stripped variant titles.",
         },
     }
 

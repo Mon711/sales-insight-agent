@@ -226,14 +226,65 @@ def _table_col_widths(headers: List[str], inch_value: float):
             0.82 * inch_value,
             0.76 * inch_value,
         ]
-    if normalized == ["rank", "category", "net sales", "net items sold"]:
+    if normalized == [
+        "image",
+        "rank",
+        "product title",
+        "variant family",
+        "net sales",
+        "net items sold",
+        "gross sales",
+        "average order value",
+        "returns",
+    ]:
         return [
-            0.40 * inch_value,
-            3.05 * inch_value,
-            1.05 * inch_value,
-            1.10 * inch_value,
+            0.58 * inch_value,
+            0.34 * inch_value,
+            1.55 * inch_value,
+            1.55 * inch_value,
+            0.78 * inch_value,
+            0.80 * inch_value,
+            0.80 * inch_value,
+            0.88 * inch_value,
+            0.72 * inch_value,
         ]
     return None
+
+
+def _table_alignment_styles(headers: List[str]):
+    normalized = [header.strip().lower() for header in headers]
+    if normalized == [
+        "image",
+        "rank",
+        "product title",
+        "variant price",
+        "net sales",
+        "net items sold",
+        "gross sales",
+        "average order value",
+        "returned quantity rate",
+    ]:
+        return [
+            ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+            ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
+        ]
+    if normalized == [
+        "image",
+        "rank",
+        "product title",
+        "variant family",
+        "net sales",
+        "net items sold",
+        "gross sales",
+        "average order value",
+        "returns",
+    ]:
+        return [
+            ("ALIGN", (0, 1), (0, -1), "CENTER"),
+            ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+            ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+        ]
+    return []
 
 
 def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
@@ -365,6 +416,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                         ("TOPPADDING", (0, 0), (-1, -1), 3),
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                     ]
+                    + _table_alignment_styles(header_cells)
                 )
             )
             if header_cells and header_cells[0].strip().lower() == "image":

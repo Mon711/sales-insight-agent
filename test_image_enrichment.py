@@ -95,6 +95,54 @@ class TestImageEnrichment(unittest.TestCase):
             self.assertTrue(image_meta["local_path"].startswith("report_assets/product_images/"))
             self.assertTrue(Path(temp_dir, image_meta["local_path"]).exists())
 
+    def test_enriches_all_selected_rows_when_product_ids_are_present(self):
+        rows = []
+        records_by_id = {}
+        for idx in range(20):
+            product_id = str(1000 + idx)
+            gid = f"gid://shopify/Product/{product_id}"
+            rows.append(
+                {
+                    "product_title": f"Product {idx + 1}",
+                    "product_id": product_id,
+                    "true_net_sales": 2000.0 - idx * 10,
+                }
+            )
+            records_by_id[gid] = {
+                "id": gid,
+                "title": f"Product {idx + 1}",
+                "handle": f"product-{idx + 1}",
+                "primary_image": {
+                    "url": f"https://cdn.example.com/product-{idx + 1}.jpg",
+                    "width": 1000,
+                    "height": 1000,
+                    "alt_text": f"Product {idx + 1} image",
+                },
+            }
+
+        client = FakeClient(records_by_id=records_by_id, records_by_title={})
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            summary, index_rows = enrich_channel_product_rows(
+                client=client,
+                channel_key="annual_top_2025",
+                product_rows=rows,
+                generation_dir=temp_dir,
+                top_limit=20,
+                downloader=successful_downloader,
+            )
+
+            self.assertEqual(summary["attempted_rows"], 20)
+            self.assertEqual(summary["matched_by_id_rows"], 20)
+            self.assertEqual(summary["enriched_rows"], 20)
+            self.assertEqual(summary["skipped_rows"], 0)
+            self.assertEqual(len(index_rows), 20)
+            self.assertTrue(all(row["product_image"]["status"] == "enriched" for row in rows))
+            self.assertTrue(all(row["product_image"]["local_path"] for row in rows))
+            self.assertTrue(
+                all(Path(temp_dir, row["product_image"]["local_path"]).exists() for row in rows)
+            )
+
     def test_resolves_ambiguous_title_with_variant_price(self):
         rows = [
             {

@@ -77,14 +77,35 @@ class TestEnsureAnnualTables(unittest.TestCase):
                                 }
                             ]
                         },
-                        "top_categories": {
-                            "rows": [
+                        "dress_variant_families": {
+                            "top_rows": [
                                 {
-                                    "product_type": "",
-                                    "net_sales": 527188.66,
-                                    "net_items_sold": 4058,
+                                    "product_title": "Daisy Dress",
+                                    "product_image": {
+                                        "local_path": "report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg",
+                                    },
+                                    "product_variant_family": "Soft Butter Yellow",
+                                    "net_sales": 13313.7,
+                                    "net_items_sold": 47,
+                                    "gross_sales": 26309.8,
+                                    "average_order_value": 340.72,
+                                    "returns": -5510.0,
                                 }
-                            ]
+                            ],
+                            "bottom_rows": [
+                                {
+                                    "product_title": "Daisy Dress",
+                                    "product_image": {
+                                        "local_path": "report_assets/product_images/annual_dress_variant_bottom_2025/daisy.jpg",
+                                    },
+                                    "product_variant_family": "Black Rose Floral",
+                                    "net_sales": -218.9,
+                                    "net_items_sold": 3,
+                                    "gross_sales": 1771.1,
+                                    "average_order_value": 35.82,
+                                    "returns": -398.0,
+                                }
+                            ],
                         },
                     }
                 ),
@@ -105,7 +126,11 @@ class TestEnsureAnnualTables(unittest.TestCase):
             self.assertNotIn("![Dress](report_assets/product_images/annual_top_2025/dress.jpg)", output)
             self.assertIn("![Ariana Dress](report_assets/product_images/annual_top_2025/ariana.jpg)", output)
             self.assertIn("![Lane Mini Dress](report_assets/product_images/annual_under_2025/lane.jpg)", output)
-            self.assertIn("| 1 | Uncategorized | $527,188.66 | 4,058 |", output)
+            self.assertIn("## Top 20 Dress Variant Families", output)
+            self.assertIn("## Bottom 20 Dress Variant Families", output)
+            self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg)", output)
+            self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_bottom_2025/daisy.jpg)", output)
+            self.assertIn("| ![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg) | 1 | Daisy Dress | Soft Butter Yellow | $13,313.70 | 47 | $26,309.80 | $340.72 | $-5,510.00 |", output)
 
 
 if __name__ == "__main__":
