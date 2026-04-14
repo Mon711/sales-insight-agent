@@ -5,6 +5,7 @@ Annual product and dress-variant reporting via ShopifyQL.
 from __future__ import annotations
 
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List
 
 from .shopify_client import ShopifyGraphQLClient
@@ -22,14 +23,29 @@ def build_annual_products_query(*, year: int, descending: bool = True, limit: in
     direction = "DESC" if descending else "ASC"
     return f"""
         FROM sales
-          SHOW product_id, net_sales, net_items_sold, gross_sales, average_order_value,
+          SHOW net_sales, net_items_sold, gross_sales, average_order_value,
             returned_quantity_rate
           WHERE product_variant_title IS NOT NULL
-          GROUP BY product_id, product_title WITH TOTALS
+          GROUP BY product_title WITH TOTALS
           SINCE {since} UNTIL {until}
           ORDER BY net_sales {direction}
           LIMIT {limit}
         VISUALIZE net_sales TYPE list
+    """
+
+
+def build_annual_all_products_query(*, year: int) -> str:
+    """
+    Build the consolidated product ranking query used for broader analysis.
+    """
+    since, until = _year_bounds(year)
+    return f"""
+        FROM sales
+          SHOW net_items_sold, net_sales
+          GROUP BY product_title WITH TOTALS
+          SINCE {since} UNTIL {until}
+          ORDER BY net_items_sold DESC
+        VISUALIZE net_items_sold
     """
 
 
@@ -68,6 +84,11 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
+def _round_half_up(value: Any, places: int = 2) -> float:
+    quantizer = Decimal("1").scaleb(-places)
+    return float(Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP))
+
+
 _SIZE_TOKEN_PATTERN = re.compile(
     r"^(?:"
     r"xxs|xxsized|xs|x-small|xsmall|small|s|"
@@ -102,13 +123,6 @@ def _normalize_variant_family_title(raw_title: Any) -> str:
     return " / ".join(kept_segments)
 
 
-def _annotate_average_selling_price(rows: List[Dict[str, Any]]) -> None:
-    for row in rows:
-        net_sales = _to_float(row.get("net_sales"))
-        items = _to_float(row.get("net_items_sold"))
-        row["average_selling_price"] = round((net_sales / items), 2) if items else 0.0
-
-
 def select_ranked_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
     """Return the first N rows preserving ranking order from ShopifyQL."""
     return list(rows[: max(0, limit)])
@@ -120,7 +134,10 @@ def _is_dress_row(row: Dict[str, Any]) -> bool:
 
 
 def _finalize_metric(value: float) -> float | int:
-    return int(value) if value.is_integer() else round(value, 2)
+    decimal_value = Decimal(str(value))
+    if decimal_value == decimal_value.to_integral():
+        return int(decimal_value)
+    return _round_half_up(value, places=2)
 
 
 def _aggregate_dress_variant_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -174,11 +191,15 @@ def _aggregate_dress_variant_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
         weight_total = _to_float(row.pop("_aov_weight_total"))
         weighted_sum = _to_float(row.pop("_aov_weighted_sum"))
         row.pop("_source_row_count", None)
-        row["net_sales"] = round(_to_float(row["net_sales"]), 2)
+        row["net_sales"] = _round_half_up(row["net_sales"], places=2)
         row["net_items_sold"] = _finalize_metric(_to_float(row["net_items_sold"]))
-        row["gross_sales"] = round(_to_float(row["gross_sales"]), 2)
-        row["returns"] = round(_to_float(row["returns"]), 2)
-        row["average_order_value"] = round(weighted_sum / weight_total, 2) if weight_total else None
+        row["gross_sales"] = _round_half_up(row["gross_sales"], places=2)
+        row["returns"] = _round_half_up(row["returns"], places=2)
+        if weight_total:
+            average_order_value = Decimal(str(weighted_sum)) / Decimal(str(weight_total))
+            row["average_order_value"] = _round_half_up(average_order_value, places=2)
+        else:
+            row["average_order_value"] = None
         aggregated_rows.append(row)
 
     aggregated_rows.sort(key=lambda row: _to_float(row.get("net_sales")), reverse=True)
@@ -200,19 +221,22 @@ def run_annual_report(
     limit: int = 20,
 ) -> Dict[str, Any]:
     """
-    Run the annual report queries (top products, underperformers, dress variants).
+    Run the annual report queries (top products, underperformers, all products sold, dress variants).
     """
     top_query = build_annual_products_query(year=year, descending=True, limit=limit)
     under_query = build_annual_products_query(year=year, descending=False, limit=limit)
+    all_products_query = build_annual_all_products_query(year=year)
     dress_variants_query = build_annual_dress_variant_query(year=year)
 
     top_response = client.run_shopifyql_report(top_query)
     under_response = client.run_shopifyql_report(under_query)
+    all_products_response = client.run_shopifyql_report(all_products_query)
     dress_variants_response = client.run_shopifyql_report(dress_variants_query)
 
     for label, response in [
         ("top performers", top_response),
         ("underperformers", under_response),
+        ("all products sold", all_products_response),
         ("dress variant families", dress_variants_response),
     ]:
         if response.get("parseErrors"):
@@ -220,13 +244,13 @@ def run_annual_report(
 
     top_rows = parse_product_rows(top_response)
     under_rows = parse_product_rows(under_response)
+    all_products_rows = parse_product_rows(all_products_response)
     dress_variant_rows = parse_product_rows(dress_variants_response)
 
     _clean_totals_columns(top_rows)
     _clean_totals_columns(under_rows)
+    _clean_totals_columns(all_products_rows)
     _clean_totals_columns(dress_variant_rows)
-    _annotate_average_selling_price(top_rows)
-    _annotate_average_selling_price(under_rows)
     grouped_dress_variant_rows = _aggregate_dress_variant_rows(dress_variant_rows)
     top_dress_variants, bottom_dress_variants = _rank_variant_rows(grouped_dress_variant_rows, limit=20)
 
@@ -235,10 +259,17 @@ def run_annual_report(
         "queries": {
             "top_performers": top_query.strip(),
             "underperformers": under_query.strip(),
+            "all_products_sold": all_products_query.strip(),
             "dress_variant_families": dress_variants_query.strip(),
         },
         "top_performers": top_rows,
         "underperformers": under_rows,
+        "all_products_sold": {
+            "query_year": year,
+            "ranking": "net_items_sold_desc",
+            "rows": all_products_rows,
+            "note": "Consolidated by product title with size and color variants combined.",
+        },
         "dress_variant_families": {
             "query_year": year,
             "ranking": "grouped_variant_net_sales_desc",

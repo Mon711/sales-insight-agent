@@ -79,6 +79,7 @@ def main():
             "  ✓ Annual report rows: "
             f"top={len(annual_report_data.get('top_performers', []))}, "
             f"under={len(annual_report_data.get('underperformers', []))}, "
+            f"all_products={len(annual_report_data.get('all_products_sold', {}).get('rows', []))}, "
             f"dress_variants={len(annual_report_data.get('dress_variant_families', {}).get('rows', []))}"
         )
     except Exception as e:
@@ -97,6 +98,8 @@ def main():
 
     top_rows = annual_report_data.get("top_performers", [])
     under_rows = annual_report_data.get("underperformers", [])
+    all_products_sold = annual_report_data.get("all_products_sold", {})
+    all_products_rows = all_products_sold.get("rows", [])
     dress_variant_families = annual_report_data.get("dress_variant_families", {})
     dress_variant_rows = dress_variant_families.get("rows", [])
     dress_variant_top_rows = dress_variant_families.get("top_rows", [])
@@ -186,6 +189,12 @@ def main():
             "image_enrichment_summary": under_image_summary,
             "rows": under_rows,
             "bottom_20_rows": bottom_20_products,
+        },
+        "all_products_sold": {
+            "query_year": year,
+            "ranking": "net_items_sold_desc",
+            "rows": all_products_rows,
+            "note": "Consolidated by product title with size and color variants combined.",
         },
         "dress_variant_families": {
             "query_year": year,

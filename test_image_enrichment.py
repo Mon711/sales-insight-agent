@@ -95,6 +95,90 @@ class TestImageEnrichment(unittest.TestCase):
             self.assertTrue(image_meta["local_path"].startswith("report_assets/product_images/"))
             self.assertTrue(Path(temp_dir, image_meta["local_path"]).exists())
 
+    def test_matches_by_exact_title_without_extra_columns(self):
+        rows = [
+            {
+                "product_title": "Ariana Dress",
+                "true_net_sales": 1200.0,
+            }
+        ]
+        client = FakeClient(
+            records_by_id={},
+            records_by_title={
+                "Ariana Dress": [
+                    {
+                        "id": "gid://shopify/Product/101",
+                        "title": "Ariana Dress",
+                        "handle": "ariana-dress",
+                        "primary_image": {
+                            "url": "https://cdn.example.com/ariana.jpg",
+                            "width": 900,
+                            "height": 1200,
+                            "alt_text": "Ariana Dress photo",
+                        },
+                    }
+                ]
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            summary, _ = enrich_channel_product_rows(
+                client=client,
+                channel_key="online_store",
+                product_rows=rows,
+                generation_dir=temp_dir,
+                top_limit=100,
+                downloader=successful_downloader,
+            )
+
+            self.assertEqual(summary["matched_by_title_rows"], 1)
+            self.assertEqual(rows[0]["product_image"]["status"], "enriched")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "product_id")
+
+    def test_enriches_all_selected_rows_with_title_only_rows(self):
+        rows = []
+        records_by_title = {}
+        for idx in range(20):
+            title = f"Product {idx + 1}"
+            rows.append(
+                {
+                    "product_title": title,
+                    "true_net_sales": 2000.0 - idx * 10,
+                }
+            )
+            records_by_title[title] = [
+                {
+                    "id": f"gid://shopify/Product/{1000 + idx}",
+                    "title": title,
+                    "handle": f"product-{idx + 1}",
+                    "primary_image": {
+                        "url": f"https://cdn.example.com/product-{idx + 1}.jpg",
+                        "width": 1000,
+                        "height": 1000,
+                        "alt_text": f"Product {idx + 1} image",
+                    },
+                }
+            ]
+
+        client = FakeClient(records_by_id={}, records_by_title=records_by_title)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            summary, index_rows = enrich_channel_product_rows(
+                client=client,
+                channel_key="annual_top_2025",
+                product_rows=rows,
+                generation_dir=temp_dir,
+                top_limit=20,
+                downloader=successful_downloader,
+            )
+
+            self.assertEqual(summary["attempted_rows"], 20)
+            self.assertEqual(summary["matched_by_title_rows"], 20)
+            self.assertEqual(summary["enriched_rows"], 20)
+            self.assertEqual(len(index_rows), 20)
+            self.assertTrue(all(row["product_image"]["status"] == "enriched" for row in rows))
+            self.assertTrue(all(row["product_image"]["match_method"] == "product_id" for row in rows))
+
     def test_enriches_all_selected_rows_when_product_ids_are_present(self):
         rows = []
         records_by_id = {}
@@ -185,7 +269,7 @@ class TestImageEnrichment(unittest.TestCase):
 
             self.assertEqual(summary["matched_by_title_rows"], 1)
             self.assertEqual(rows[0]["product_image"]["status"], "enriched")
-            self.assertEqual(rows[0]["product_image"]["match_method"], "title_exact_variant_price")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "product_id")
 
     def test_marks_ambiguous_when_title_has_multiple_matches(self):
         rows = [

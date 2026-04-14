@@ -49,7 +49,6 @@ class TestEnsureAnnualTables(unittest.TestCase):
                             "rows": [
                                 {
                                     "product_title": "Ariana Dress",
-                                    "product_variant_price": 378,
                                     "net_sales": 8278.2,
                                     "net_items_sold": 77,
                                     "gross_sales": 35154,
@@ -65,7 +64,6 @@ class TestEnsureAnnualTables(unittest.TestCase):
                             "rows": [
                                 {
                                     "product_title": "Lane Mini Dress",
-                                    "product_variant_price": 368,
                                     "net_sales": -736,
                                     "net_items_sold": -2,
                                     "gross_sales": 0,
@@ -128,6 +126,7 @@ class TestEnsureAnnualTables(unittest.TestCase):
             self.assertIn("![Lane Mini Dress](report_assets/product_images/annual_under_2025/lane.jpg)", output)
             self.assertIn("## Top 20 Dress Variant Families", output)
             self.assertIn("## Bottom 20 Dress Variant Families", output)
+            self.assertIn("| ![Ariana Dress](report_assets/product_images/annual_top_2025/ariana.jpg) | 1 | Ariana Dress | $8,278.20 | 77 | $35,154.00 | $233.42 | 17.2% |", output)
             self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg)", output)
             self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_bottom_2025/daisy.jpg)", output)
             self.assertIn("| ![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg) | 1 | Daisy Dress | Soft Butter Yellow | $13,313.70 | 47 | $26,309.80 | $340.72 | $-5,510.00 |", output)

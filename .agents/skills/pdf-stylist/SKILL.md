@@ -9,7 +9,7 @@ Use this skill to turn analysis into PDF-ready markdown that reads like a consul
 
 ## Core Rule
 
-Do not just reword the draft. Rebuild it into a structured layout system.
+Do not just reword the draft. Rebuild it into a structured layout system that is compact enough to survive ReportLab rendering without overflowing pages or forcing awkward table splits.
 
 ## Workflow
 
@@ -20,6 +20,7 @@ Do not just reword the draft. Rebuild it into a structured layout system.
 5. Place tables and images in their own blocks.
 6. Remove repetition, filler, and any data dump behavior.
 7. End with concrete actions and owner-oriented next steps.
+8. Keep the first page executive-summary focused, with no giant intro block before the report’s actual findings.
 
 ## Layout System
 
@@ -32,6 +33,7 @@ Do not just reword the draft. Rebuild it into a structured layout system.
 - Keep the report insight-first, not chronology-first.
 - Prefer scannable bullets over dense prose.
 - Keep the final tone concise, executive, and practical.
+- Use flat bullet lists only. Avoid nested bullets and avoid elaborate indentation patterns that turn into visual clutter in PDF.
 
 ## Typography And Spacing
 
@@ -39,6 +41,7 @@ Do not just reword the draft. Rebuild it into a structured layout system.
 - Use bold only for emphasis, not decoration.
 - Leave a small gap within a section and a larger gap between sections.
 - Avoid huge whitespace blocks and avoid cramped stacks of text.
+- Keep section transitions tight. The PDF should feel compact, not airy.
 
 ## Tables
 
@@ -47,6 +50,8 @@ Do not just reword the draft. Rebuild it into a structured layout system.
 - Let numeric columns stay numeric and avoid wrapping them in extra prose.
 - Prefer dashboard-style tables with clear headers and compact rows.
 - Do not bury a table inside a paragraph or bullet.
+- Keep performer tables faithful to the source query output. Do not add columns that were not returned by ShopifyQL.
+- If a table is wide, shorten surrounding prose rather than expanding the table with extra helper columns.
 
 ## Images
 
@@ -55,6 +60,7 @@ Do not just reword the draft. Rebuild it into a structured layout system.
 - Place images near the relevant insight.
 - Center the visual narrative by keeping images isolated from dense text.
 - Never use remote CDN image links in the PDF-ready draft.
+- Avoid stacking too many images back-to-back without nearby interpretation.
 
 ## Page Break Discipline
 
@@ -81,3 +87,4 @@ Before finalizing, confirm:
 - tables are clean
 - images are local and purposeful
 - the result feels like an executive business report, not a raw export
+- the first page reads like a polished executive summary, not a pasted data dump

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -35,18 +36,26 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _fmt_currency(value: Any) -> str:
+def _round_half_up(value: Any, places: int = 2) -> Decimal | None:
     amount = _as_float(value)
+    if amount is None:
+        return None
+    quantizer = Decimal("1").scaleb(-places)
+    return Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
+
+
+def _fmt_currency(value: Any) -> str:
+    amount = _round_half_up(value, places=2)
     if amount is None:
         return ""
     return f"${amount:,.2f}"
 
 
 def _fmt_number(value: Any) -> str:
-    amount = _as_float(value)
+    amount = _round_half_up(value, places=2)
     if amount is None:
         return ""
-    if amount.is_integer():
+    if amount == amount.to_integral():
         return f"{int(amount):,}"
     return f"{amount:,.2f}"
 
@@ -55,7 +64,8 @@ def _fmt_percent(value: Any) -> str:
     amount = _as_float(value)
     if amount is None:
         return ""
-    return f"{amount * 100:.1f}%"
+    percent = (Decimal(str(amount)) * Decimal("100")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return f"{percent:.1f}%"
 
 
 def _product_image_cell(row: Dict[str, Any]) -> str:
@@ -89,7 +99,6 @@ def _top_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[List[Any]]:
                 _product_image_cell(row),
                 idx,
                 row.get("product_title"),
-                _fmt_currency(row.get("product_variant_price")),
                 _fmt_currency(row.get("net_sales")),
                 _fmt_number(row.get("net_items_sold")),
                 _fmt_currency(row.get("gross_sales")),
@@ -127,11 +136,11 @@ def _render_tables_block(data: Dict[str, Any]) -> str:
     dress_variant_bottom = dress_variant_families.get("bottom_rows") or []
 
     top_table = _table(
-        ["Image", "Rank", "Product title", "Variant price", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
+        ["Image", "Rank", "Product title", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
         _top_rows(top, limit=20),
     )
     under_table = _table(
-        ["Image", "Rank", "Product title", "Variant price", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
+        ["Image", "Rank", "Product title", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returned quantity rate"],
         _top_rows(under, limit=20),
     )
     dress_variant_top_table = _table(

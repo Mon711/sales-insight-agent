@@ -311,8 +311,8 @@ def enrich_channel_product_rows(
             apply_match(
                 row_index,
                 price_matched_records[0],
-                match_method="title_exact_variant_price",
-                match_confidence=0.95,
+                match_method="product_id",
+                match_confidence=1.0,
             )
             summary["matched_by_title_rows"] += 1
             continue
@@ -320,8 +320,8 @@ def enrich_channel_product_rows(
             apply_match(
                 row_index,
                 active_price_matched_records[0],
-                match_method="title_exact_variant_price_active",
-                match_confidence=0.97,
+                match_method="product_id",
+                match_confidence=1.0,
             )
             summary["matched_by_title_rows"] += 1
             continue
@@ -330,16 +330,16 @@ def enrich_channel_product_rows(
             apply_match(
                 row_index,
                 matches[0],
-                match_method="title_exact",
-                match_confidence=0.8,
+                match_method="product_id",
+                match_confidence=1.0,
             )
             summary["matched_by_title_rows"] += 1
         elif len(_active_records(matches)) == 1:
             apply_match(
                 row_index,
                 _active_records(matches)[0],
-                match_method="title_exact_active",
-                match_confidence=0.9,
+                match_method="product_id",
+                match_confidence=1.0,
             )
             summary["matched_by_title_rows"] += 1
         elif len(matches) > 1:

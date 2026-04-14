@@ -5,7 +5,7 @@ Bundle report assets and export a PDF version of the marketing report.
 This script solves report portability issues by:
 1. Copying the whole reports/assets tree into the Desktop output folder.
 2. Rewriting markdown image links to local relative paths under report_assets/.
-3. Rendering a cleaner PDF with section-based page breaks and table support.
+3. Rendering a cleaner PDF with compact markdown, table support, and local images.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from typing import List, Tuple
 
 IMAGE_LINK_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
-UNORDERED_BULLET_PATTERN = re.compile(r"^\s*[-*]\s+(.+)$")
-ORDERED_BULLET_PATTERN = re.compile(r"^\s*\d+\.\s+(.+)$")
+UNORDERED_BULLET_PATTERN = re.compile(r"^(\s*)[-*]\s+(.+)$")
+ORDERED_BULLET_PATTERN = re.compile(r"^(\s*)(\d+)\.\s+(.+)$")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$")
 HTML_COMMENT_PATTERN = re.compile(r"^<!--.*-->$")
 def _extract_target(raw_target: str) -> str:
@@ -208,7 +208,6 @@ def _table_col_widths(headers: List[str], inch_value: float):
         "image",
         "rank",
         "product title",
-        "variant price",
         "net sales",
         "net items sold",
         "gross sales",
@@ -216,15 +215,14 @@ def _table_col_widths(headers: List[str], inch_value: float):
         "returned quantity rate",
     ]:
         return [
-            0.58 * inch_value,
-            0.34 * inch_value,
-            1.65 * inch_value,
-            0.62 * inch_value,
-            0.68 * inch_value,
-            0.70 * inch_value,
-            0.70 * inch_value,
-            0.82 * inch_value,
-            0.76 * inch_value,
+            0.50 * inch_value,
+            0.35 * inch_value,
+            1.95 * inch_value,
+            0.86 * inch_value,
+            0.75 * inch_value,
+            0.86 * inch_value,
+            0.86 * inch_value,
+            0.85 * inch_value,
         ]
     if normalized == [
         "image",
@@ -238,15 +236,15 @@ def _table_col_widths(headers: List[str], inch_value: float):
         "returns",
     ]:
         return [
-            0.58 * inch_value,
-            0.34 * inch_value,
-            1.55 * inch_value,
-            1.55 * inch_value,
-            0.78 * inch_value,
-            0.80 * inch_value,
-            0.80 * inch_value,
-            0.88 * inch_value,
+            0.50 * inch_value,
+            0.35 * inch_value,
+            1.35 * inch_value,
+            1.35 * inch_value,
+            0.65 * inch_value,
+            0.65 * inch_value,
+            0.70 * inch_value,
             0.72 * inch_value,
+            0.62 * inch_value,
         ]
     return None
 
@@ -257,7 +255,6 @@ def _table_alignment_styles(headers: List[str]):
         "image",
         "rank",
         "product title",
-        "variant price",
         "net sales",
         "net items sold",
         "gross sales",
@@ -294,7 +291,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import Image as RLImage
-        from reportlab.platypus import PageBreak, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
     except Exception as exc:
         raise RuntimeError(
             "Missing PDF dependency. Install with: python3 -m pip install reportlab"
@@ -308,14 +305,14 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
         "Body",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=10.5,
-        leading=14,
-        spaceAfter=6,
+        fontSize=9.8,
+        leading=12.4,
+        spaceAfter=3,
     )
     heading_styles = {
-        1: ParagraphStyle("H1", parent=styles["Heading1"], fontSize=20, leading=24, spaceBefore=12, spaceAfter=8),
-        2: ParagraphStyle("H2", parent=styles["Heading2"], fontSize=16, leading=20, spaceBefore=10, spaceAfter=6),
-        3: ParagraphStyle("H3", parent=styles["Heading3"], fontSize=13, leading=17, spaceBefore=8, spaceAfter=4),
+        1: ParagraphStyle("H1", parent=styles["Heading1"], fontSize=19, leading=22, spaceBefore=8, spaceAfter=6),
+        2: ParagraphStyle("H2", parent=styles["Heading2"], fontSize=15, leading=18, spaceBefore=8, spaceAfter=4),
+        3: ParagraphStyle("H3", parent=styles["Heading3"], fontSize=12.5, leading=15, spaceBefore=6, spaceAfter=3),
     }
     code_style = ParagraphStyle(
         "Code",
@@ -328,11 +325,20 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
         rightIndent=8,
         borderPadding=6,
     )
+    bullet_style = ParagraphStyle(
+        "Bullet",
+        parent=body_style,
+        leftIndent=14,
+        firstLineIndent=0,
+        bulletIndent=0,
+        spaceBefore=0,
+        spaceAfter=2,
+    )
     table_body_style = ParagraphStyle(
         "TableBody",
         parent=body_style,
-        fontSize=7.2,
-        leading=8.6,
+        fontSize=6.9,
+        leading=7.8,
         spaceAfter=0,
     )
     table_header_style = ParagraphStyle(
@@ -344,7 +350,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
     flowables = []
     in_code_block = False
     code_lines: List[str] = []
-    seen_h2 = False
+    last_was_spacer = False
     i = 0
 
     while i < len(lines):
@@ -393,7 +399,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                             cell,
                             paragraph_style,
                             markdown_path,
-                            image_max_size=0.42 * inch,
+                            image_max_size=0.52 * inch,
                         )
                         for cell in row
                     ]
@@ -429,11 +435,14 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                     )
                 )
             flowables.append(table)
-            flowables.append(Spacer(1, 0.10 * inch))
+            flowables.append(Spacer(1, 0.06 * inch))
+            last_was_spacer = True
             continue
 
         if not stripped:
-            flowables.append(Spacer(1, 0.08 * inch))
+            if not last_was_spacer:
+                flowables.append(Spacer(1, 0.04 * inch))
+                last_was_spacer = True
             i += 1
             continue
 
@@ -453,40 +462,57 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                     rl_image.drawWidth = max_width
                     rl_image.drawHeight = rl_image.drawHeight * ratio
                 flowables.append(rl_image)
-                flowables.append(Spacer(1, 0.10 * inch))
+                flowables.append(Spacer(1, 0.06 * inch))
+                last_was_spacer = True
             else:
                 note = _inline_markdown_to_paragraph_html(f"[Missing image: {image_target}]")
                 flowables.append(Paragraph(note, body_style))
             i += 1
+            last_was_spacer = False
             continue
 
         heading_match = HEADING_PATTERN.match(stripped)
         if heading_match:
             level = min(len(heading_match.group(1)), 3)
             content = _inline_markdown_to_paragraph_html(heading_match.group(2))
-            if level == 2:
-                if seen_h2 and flowables:
-                    flowables.append(PageBreak())
-                seen_h2 = True
             flowables.append(Paragraph(content, heading_styles[level]))
+            last_was_spacer = False
             i += 1
             continue
 
         unordered_match = UNORDERED_BULLET_PATTERN.match(line)
         if unordered_match:
-            content = _inline_markdown_to_paragraph_html(unordered_match.group(1))
-            flowables.append(Paragraph(f"- {content}", body_style))
+            indent_spaces = len(unordered_match.group(1))
+            content = _inline_markdown_to_paragraph_html(unordered_match.group(2))
+            bullet_indent = 14 + (indent_spaces // 2) * 12
+            bullet_paragraph_style = ParagraphStyle(
+                "BulletIndented",
+                parent=bullet_style,
+                leftIndent=bullet_indent,
+            )
+            flowables.append(Paragraph(content, bullet_paragraph_style, bulletText="•"))
+            last_was_spacer = False
             i += 1
             continue
 
         ordered_match = ORDERED_BULLET_PATTERN.match(line)
         if ordered_match:
-            content = _inline_markdown_to_paragraph_html(ordered_match.group(1))
-            flowables.append(Paragraph(content, body_style))
+            indent_spaces = len(ordered_match.group(1))
+            number = ordered_match.group(2)
+            content = _inline_markdown_to_paragraph_html(ordered_match.group(3))
+            bullet_indent = 14 + (indent_spaces // 2) * 12
+            ordered_paragraph_style = ParagraphStyle(
+                "OrderedIndented",
+                parent=bullet_style,
+                leftIndent=bullet_indent,
+            )
+            flowables.append(Paragraph(content, ordered_paragraph_style, bulletText=f"{number}."))
+            last_was_spacer = False
             i += 1
             continue
 
         flowables.append(Paragraph(_inline_markdown_to_paragraph_html(line), body_style))
+        last_was_spacer = False
         i += 1
 
     if in_code_block and code_lines:
