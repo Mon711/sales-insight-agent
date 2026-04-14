@@ -56,7 +56,7 @@ def build_annual_dress_variant_query(*, year: int) -> str:
     since, until = _year_bounds(year)
     return f"""
         FROM sales
-          SHOW product_id, net_sales, net_items_sold, gross_sales, average_order_value, returns
+          SHOW product_id, net_sales, net_items_sold, gross_sales, returns
           WHERE product_variant_title_at_time_of_sale IS NOT NULL
             AND product_title CONTAINS 'Dress'
           GROUP BY product_id, product_title, product_variant_title WITH TOTALS
@@ -91,6 +91,8 @@ def _round_half_up(value: Any, places: int = 2) -> float:
 
 _SIZE_TOKEN_PATTERN = re.compile(
     r"^(?:"
+    r"\d{1,2}(?:\s*(?:year|years|yr|yrs|month|months|mo|m))?|"
+    r"\d{1,2}|"
     r"xxs|xxsized|xs|x-small|xsmall|small|s|"
     r"medium|m|large|l|x-large|xlarge|xl|"
     r"xxl|2xl|3xl|xx-large|xxlarge|one size|onesize|one-size"
@@ -118,7 +120,7 @@ def _normalize_variant_family_title(raw_title: Any) -> str:
     kept_segments = [segment for segment in segments if not _is_size_only_segment(segment)]
 
     if not kept_segments:
-        return text
+        return "Unspecified"
 
     return " / ".join(kept_segments)
 
@@ -172,34 +174,21 @@ def _aggregate_dress_variant_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
         )
 
         net_items = _to_float(row.get("net_items_sold"))
-        aov = row.get("average_order_value")
-        aov_value = _to_float(aov)
-
         bucket["net_sales"] += _to_float(row.get("net_sales"))
         bucket["net_items_sold"] += net_items
         bucket["gross_sales"] += _to_float(row.get("gross_sales"))
         bucket["returns"] += _to_float(row.get("returns"))
         if not bucket.get("product_id") and product_id:
             bucket["product_id"] = product_id
-        if aov is not None:
-            bucket["_aov_weighted_sum"] += aov_value * net_items
-            bucket["_aov_weight_total"] += net_items
         bucket["_source_row_count"] += 1
 
     aggregated_rows: List[Dict[str, Any]] = []
     for row in grouped.values():
-        weight_total = _to_float(row.pop("_aov_weight_total"))
-        weighted_sum = _to_float(row.pop("_aov_weighted_sum"))
         row.pop("_source_row_count", None)
         row["net_sales"] = _round_half_up(row["net_sales"], places=2)
         row["net_items_sold"] = _finalize_metric(_to_float(row["net_items_sold"]))
         row["gross_sales"] = _round_half_up(row["gross_sales"], places=2)
         row["returns"] = _round_half_up(row["returns"], places=2)
-        if weight_total:
-            average_order_value = Decimal(str(weighted_sum)) / Decimal(str(weight_total))
-            row["average_order_value"] = _round_half_up(average_order_value, places=2)
-        else:
-            row["average_order_value"] = None
         aggregated_rows.append(row)
 
     aggregated_rows.sort(key=lambda row: _to_float(row.get("net_sales")), reverse=True)

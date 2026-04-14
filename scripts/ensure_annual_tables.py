@@ -121,7 +121,6 @@ def _dress_variant_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[Lis
                 _fmt_currency(row.get("net_sales")),
                 _fmt_number(row.get("net_items_sold")),
                 _fmt_currency(row.get("gross_sales")),
-                _fmt_currency(row.get("average_order_value")),
                 _fmt_currency(row.get("returns")),
             ]
         )
@@ -144,11 +143,11 @@ def _render_tables_block(data: Dict[str, Any]) -> str:
         _top_rows(under, limit=20),
     )
     dress_variant_top_table = _table(
-        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returns"],
+        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Returns"],
         _dress_variant_rows(dress_variant_top, limit=20),
     )
     dress_variant_bottom_table = _table(
-        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Average order value", "Returns"],
+        ["Image", "Rank", "Product title", "Variant family", "Net sales", "Net items sold", "Gross sales", "Returns"],
         _dress_variant_rows(dress_variant_bottom, limit=20),
     )
 

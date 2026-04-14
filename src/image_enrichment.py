@@ -307,60 +307,40 @@ def enrich_channel_product_rows(
             )
         ]
         active_price_matched_records = _active_records(price_matched_records)
-        if len(price_matched_records) == 1:
-            apply_match(
-                row_index,
-                price_matched_records[0],
-                match_method="product_id",
-                match_confidence=1.0,
-            )
-            summary["matched_by_title_rows"] += 1
-            continue
-        if len(active_price_matched_records) == 1:
-            apply_match(
-                row_index,
-                active_price_matched_records[0],
-                match_method="product_id",
-                match_confidence=1.0,
-            )
-            summary["matched_by_title_rows"] += 1
-            continue
+        active_matches = _active_records(matches)
 
-        if len(matches) == 1:
-            apply_match(
-                row_index,
-                matches[0],
-                match_method="product_id",
-                match_confidence=1.0,
-            )
-            summary["matched_by_title_rows"] += 1
-        elif len(_active_records(matches)) == 1:
-            apply_match(
-                row_index,
-                _active_records(matches)[0],
-                match_method="product_id",
-                match_confidence=1.0,
-            )
-            summary["matched_by_title_rows"] += 1
-        elif len(matches) > 1:
-            image_payload["status"] = "ambiguous"
-            if price_matched_records:
-                image_payload["message"] = "Multiple products matched this title and variant price."
-                image_payload["match_method"] = "title_exact_variant_price"
-            else:
-                image_payload["message"] = "Multiple products matched this title."
-                image_payload["match_method"] = "title_exact"
-            image_payload["match_confidence"] = 0.0
-            image_payload["candidate_product_gids"] = [
-                item.get("id") for item in (price_matched_records or matches)
-            ]
-            summary["ambiguous_rows"] += 1
-        else:
+        chosen_record = None
+        chosen_method = None
+        if len(price_matched_records) == 1:
+            chosen_record = price_matched_records[0]
+            chosen_method = "title_exact_variant_price"
+        elif len(active_price_matched_records) == 1:
+            chosen_record = active_price_matched_records[0]
+            chosen_method = "title_exact_variant_price_active"
+        elif len(matches) == 1:
+            chosen_record = matches[0]
+            chosen_method = "title_exact"
+        elif active_matches:
+            chosen_record = active_matches[0]
+            chosen_method = "title_exact_active_fallback"
+        elif matches:
+            chosen_record = matches[0]
+            chosen_method = "title_exact_fallback"
+
+        if chosen_record is None:
             image_payload["status"] = "not_found"
             image_payload["message"] = "No exact product title match found in Product API."
             image_payload["match_method"] = "title_exact"
             image_payload["match_confidence"] = 0.0
             summary["not_found_rows"] += 1
+        else:
+            apply_match(
+                row_index,
+                chosen_record,
+                match_method=chosen_method or "title_exact",
+                match_confidence=1.0 if "title_exact" in (chosen_method or "") else 0.8,
+            )
+            summary["matched_by_title_rows"] += 1
 
     for row_index, row in selected:
         image_payload = row.get("product_image", {})

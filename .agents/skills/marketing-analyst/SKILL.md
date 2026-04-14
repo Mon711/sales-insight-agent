@@ -54,6 +54,7 @@ Produce one Markdown report that:
 6. Include complete query-result tables in Markdown for each required report slice.
    - The top/bottom performer tables must reflect the exact ShopifyQL output only.
    - Do not add computed columns such as product IDs, variant prices, or calculated selling prices.
+   - Dress variant family tables should not include average order value.
 
 ## Analysis Rules
 

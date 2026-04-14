@@ -133,7 +133,7 @@ class TestImageEnrichment(unittest.TestCase):
 
             self.assertEqual(summary["matched_by_title_rows"], 1)
             self.assertEqual(rows[0]["product_image"]["status"], "enriched")
-            self.assertEqual(rows[0]["product_image"]["match_method"], "product_id")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "title_exact")
 
     def test_enriches_all_selected_rows_with_title_only_rows(self):
         rows = []
@@ -177,7 +177,7 @@ class TestImageEnrichment(unittest.TestCase):
             self.assertEqual(summary["enriched_rows"], 20)
             self.assertEqual(len(index_rows), 20)
             self.assertTrue(all(row["product_image"]["status"] == "enriched" for row in rows))
-            self.assertTrue(all(row["product_image"]["match_method"] == "product_id" for row in rows))
+            self.assertTrue(all(row["product_image"]["match_method"].startswith("title_exact") for row in rows))
 
     def test_enriches_all_selected_rows_when_product_ids_are_present(self):
         rows = []
@@ -269,9 +269,9 @@ class TestImageEnrichment(unittest.TestCase):
 
             self.assertEqual(summary["matched_by_title_rows"], 1)
             self.assertEqual(rows[0]["product_image"]["status"], "enriched")
-            self.assertEqual(rows[0]["product_image"]["match_method"], "product_id")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "title_exact_variant_price")
 
-    def test_marks_ambiguous_when_title_has_multiple_matches(self):
+    def test_uses_active_fallback_when_title_has_multiple_matches(self):
         rows = [
             {"product_title": "Nina Pant", "product_type": "Pant", "true_net_sales": 500.0}
         ]
@@ -279,8 +279,14 @@ class TestImageEnrichment(unittest.TestCase):
             records_by_id={},
             records_by_title={
                 "Nina Pant": [
-                    {"id": "gid://shopify/Product/1", "title": "Nina Pant", "handle": "nina-pant", "primary_image": None},
-                    {"id": "gid://shopify/Product/2", "title": "Nina Pant", "handle": "nina-pant-alt", "primary_image": None},
+                    {"id": "gid://shopify/Product/1", "title": "Nina Pant", "handle": "nina-pant", "status": "ARCHIVED", "primary_image": None},
+                    {
+                        "id": "gid://shopify/Product/2",
+                        "title": "Nina Pant",
+                        "handle": "nina-pant-alt",
+                        "status": "ACTIVE",
+                        "primary_image": {"url": "https://cdn.example.com/nina.jpg"},
+                    },
                 ]
             },
         )
@@ -295,8 +301,9 @@ class TestImageEnrichment(unittest.TestCase):
                 downloader=successful_downloader,
             )
 
-            self.assertEqual(summary["ambiguous_rows"], 1)
-            self.assertEqual(rows[0]["product_image"]["status"], "ambiguous")
+            self.assertEqual(summary["matched_by_title_rows"], 1)
+            self.assertEqual(rows[0]["product_image"]["status"], "enriched")
+            self.assertEqual(rows[0]["product_image"]["match_method"], "title_exact_active_fallback")
 
     def test_applies_top_limit_and_skips_lower_ranked_rows(self):
         rows = [

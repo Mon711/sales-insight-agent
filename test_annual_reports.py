@@ -52,6 +52,8 @@ class TestAnnualReports(unittest.TestCase):
         self.assertEqual(_normalize_variant_family_title("Small / Soft Butter Yellow"), "Soft Butter Yellow")
         self.assertEqual(_normalize_variant_family_title("White with Painted Beads / Small"), "White with Painted Beads")
         self.assertEqual(_normalize_variant_family_title("X-Small / French Blue"), "French Blue")
+        self.assertEqual(_normalize_variant_family_title("6 year / Red Soft Floral"), "Red Soft Floral")
+        self.assertEqual(_normalize_variant_family_title("6"), "Unspecified")
 
     def test_select_ranked_rows(self):
         rows = [
@@ -127,7 +129,6 @@ class TestAnnualReports(unittest.TestCase):
         self.assertEqual(grouped[0]["net_items_sold"], 47)
         self.assertEqual(grouped[0]["gross_sales"], 26309.8)
         self.assertEqual(grouped[0]["returns"], -5510.0)
-        self.assertAlmostEqual(grouped[0]["average_order_value"], 340.72, places=2)
         self.assertEqual(grouped[0]["product_id"], "gid://shopify/Product/101")
         self.assertEqual(grouped[1]["product_variant_family"], "French Blue")
 

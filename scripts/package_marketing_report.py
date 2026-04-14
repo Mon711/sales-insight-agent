@@ -232,19 +232,17 @@ def _table_col_widths(headers: List[str], inch_value: float):
         "net sales",
         "net items sold",
         "gross sales",
-        "average order value",
         "returns",
     ]:
         return [
             0.50 * inch_value,
             0.35 * inch_value,
-            1.35 * inch_value,
-            1.35 * inch_value,
-            0.65 * inch_value,
-            0.65 * inch_value,
-            0.70 * inch_value,
+            1.40 * inch_value,
+            1.30 * inch_value,
             0.72 * inch_value,
-            0.62 * inch_value,
+            0.72 * inch_value,
+            0.80 * inch_value,
+            0.71 * inch_value,
         ]
     return None
 
@@ -273,7 +271,6 @@ def _table_alignment_styles(headers: List[str]):
         "net sales",
         "net items sold",
         "gross sales",
-        "average order value",
         "returns",
     ]:
         return [
