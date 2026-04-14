@@ -53,6 +53,8 @@ class TestAnnualReports(unittest.TestCase):
         self.assertEqual(_normalize_variant_family_title("White with Painted Beads / Small"), "White with Painted Beads")
         self.assertEqual(_normalize_variant_family_title("X-Small / French Blue"), "French Blue")
         self.assertEqual(_normalize_variant_family_title("6 year / Red Soft Floral"), "Red Soft Floral")
+        self.assertEqual(_normalize_variant_family_title("XX-Small / Lotus Garden Blue"), "Lotus Garden Blue")
+        self.assertEqual(_normalize_variant_family_title("Black Crochet Lace / XX-Small"), "Black Crochet Lace")
         self.assertEqual(_normalize_variant_family_title("6"), "Unspecified")
 
     def test_select_ranked_rows(self):

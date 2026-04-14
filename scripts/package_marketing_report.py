@@ -15,6 +15,7 @@ import html
 import re
 import shutil
 import sys
+import unicodedata
 from pathlib import Path
 from typing import List, Tuple
 
@@ -25,6 +26,40 @@ UNORDERED_BULLET_PATTERN = re.compile(r"^(\s*)[-*]\s+(.+)$")
 ORDERED_BULLET_PATTERN = re.compile(r"^(\s*)(\d+)\.\s+(.+)$")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$")
 HTML_COMMENT_PATTERN = re.compile(r"^<!--.*-->$")
+
+UNICODE_PUNCTUATION_REPLACEMENTS = {
+    "\u00a0": " ",
+    "\u2007": " ",
+    "\u202f": " ",
+    "\u200b": "",
+    "\u2010": "-",
+    "\u2011": "-",
+    "\u2012": "-",
+    "\u2013": "-",
+    "\u2014": "-",
+    "\u2015": "-",
+    "\u2212": "-",
+    "\u2026": "...",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201a": ",",
+    "\u201b": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u201e": '"',
+}
+
+
+def _sanitize_pdf_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    for source, replacement in UNICODE_PUNCTUATION_REPLACEMENTS.items():
+        normalized = normalized.replace(source, replacement)
+    return "".join(
+        ch for ch in normalized
+        if ch in "\n\t" or unicodedata.category(ch)[0] != "C"
+    )
+
+
 def _extract_target(raw_target: str) -> str:
     target = raw_target.strip()
     if target.startswith("<") and target.endswith(">"):
@@ -165,7 +200,7 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
 
 
 def _inline_markdown_to_paragraph_html(text: str) -> str:
-    escaped = html.escape(text.strip())
+    escaped = html.escape(_sanitize_pdf_text(text.strip()))
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"\*(.+?)\*", r"<i>\1</i>", escaped)
     escaped = re.sub(r"`([^`]+)`", r"<font name='Courier'>\1</font>", escaped)
@@ -294,7 +329,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             "Missing PDF dependency. Install with: python3 -m pip install reportlab"
         ) from exc
 
-    markdown_text = markdown_path.read_text(encoding="utf-8")
+    markdown_text = _sanitize_pdf_text(markdown_path.read_text(encoding="utf-8"))
     lines = markdown_text.splitlines()
 
     styles = getSampleStyleSheet()

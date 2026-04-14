@@ -102,7 +102,31 @@ class TestEnsureAnnualTables(unittest.TestCase):
                                     "gross_sales": 1771.1,
                                     "average_order_value": 35.82,
                                     "returns": -398.0,
-                                }
+                                },
+                                {
+                                    "product_title": "Isabel Dress",
+                                    "product_image": {
+                                        "local_path": "report_assets/product_images/annual_dress_variant_bottom_2025/isabel.jpg",
+                                    },
+                                    "product_variant_family": "XX-Small / Lotus Garden Blue",
+                                    "net_sales": 0,
+                                    "net_items_sold": 0,
+                                    "gross_sales": 668,
+                                    "average_order_value": 0,
+                                    "returns": -668,
+                                },
+                                {
+                                    "product_title": "Penny Midi Dress",
+                                    "product_image": {
+                                        "local_path": "report_assets/product_images/annual_dress_variant_bottom_2025/penny.jpg",
+                                    },
+                                    "product_variant_family": "Black Crochet Lace / XX-Small",
+                                    "net_sales": 0,
+                                    "net_items_sold": 0,
+                                    "gross_sales": 268,
+                                    "average_order_value": 0,
+                                    "returns": -268,
+                                },
                             ],
                         },
                     }
@@ -130,6 +154,9 @@ class TestEnsureAnnualTables(unittest.TestCase):
             self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg)", output)
             self.assertIn("![Daisy Dress](report_assets/product_images/annual_dress_variant_bottom_2025/daisy.jpg)", output)
             self.assertIn("| ![Daisy Dress](report_assets/product_images/annual_dress_variant_top_2025/daisy.jpg) | 1 | Daisy Dress | Soft Butter Yellow | $13,313.70 | 47 | $26,309.80 | $-5,510.00 |", output)
+            self.assertIn("| ![Daisy Dress](report_assets/product_images/annual_dress_variant_bottom_2025/daisy.jpg) | 1 | Daisy Dress | Black Rose Floral | $-218.90 | 3 | $1,771.10 | $-398.00 |", output)
+            self.assertIn("| ![Isabel Dress](report_assets/product_images/annual_dress_variant_bottom_2025/isabel.jpg) | 2 | Isabel Dress | Lotus Garden Blue | $0.00 | 0 | $668.00 | $-668.00 |", output)
+            self.assertIn("| ![Penny Midi Dress](report_assets/product_images/annual_dress_variant_bottom_2025/penny.jpg) | 3 | Penny Midi Dress | Black Crochet Lace | $0.00 | 0 | $268.00 | $-268.00 |", output)
 
 
 if __name__ == "__main__":

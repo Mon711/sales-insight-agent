@@ -8,9 +8,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, List
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.product_reports import _normalize_variant_family_title
 
 START_MARKER = "<!-- AUTO_ANNUAL_QUERY_TABLES_START -->"
 END_MARKER = "<!-- AUTO_ANNUAL_QUERY_TABLES_END -->"
@@ -78,6 +85,13 @@ def _product_image_cell(row: Dict[str, Any]) -> str:
     return f"![{alt_text}]({local_path})"
 
 
+def _variant_family_cell(row: Dict[str, Any]) -> str:
+    raw_family = row.get("product_variant_family")
+    if _is_blank(raw_family):
+        raw_family = row.get("product_variant_title") or row.get("product_variant_title_at_time_of_sale")
+    return _normalize_variant_family_title(raw_family)
+
+
 def _fmt(value: Any) -> str:
     if value is None:
         return ""
@@ -117,7 +131,7 @@ def _dress_variant_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[Lis
                 _product_image_cell(row),
                 idx,
                 row.get("product_title"),
-                row.get("product_variant_family") or row.get("product_variant_title") or "Unspecified",
+                _variant_family_cell(row),
                 _fmt_currency(row.get("net_sales")),
                 _fmt_number(row.get("net_items_sold")),
                 _fmt_currency(row.get("gross_sales")),

@@ -93,7 +93,7 @@ _SIZE_TOKEN_PATTERN = re.compile(
     r"^(?:"
     r"\d{1,2}(?:\s*(?:year|years|yr|yrs|month|months|mo|m))?|"
     r"\d{1,2}|"
-    r"xxs|xxsized|xs|x-small|xsmall|small|s|"
+    r"xxs|xxsmall|xxsized|xs|x-small|xsmall|small|s|"
     r"medium|m|large|l|x-large|xlarge|xl|"
     r"xxl|2xl|3xl|xx-large|xxlarge|one size|onesize|one-size"
     r")$",

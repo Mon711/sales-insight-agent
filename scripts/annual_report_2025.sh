@@ -31,7 +31,7 @@ run_reports_log="$output_dir/run_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
 codex_model="${ANNUAL_REPORT_MODEL:-gpt-5.2-codex}"
-codex_reasoning_effort="${ANNUAL_REPORT_REASONING_EFFORT:-low}"
+codex_reasoning_effort="${ANNUAL_REPORT_REASONING_EFFORT:-medium}"
 
 echo "[1/3] Fetching latest Shopify annual report data..."
 if ! REPORTS_BASE_DIR="$reports_base_dir" REPORT_OUTPUT_DIR="$output_dir" python run_reports.py >"$run_reports_log" 2>&1; then
