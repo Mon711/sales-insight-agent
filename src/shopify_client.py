@@ -54,6 +54,7 @@ class ShopifyGraphQLClient:
         if variables:
             payload["variables"] = variables
 
+        # Retry up to 5 times to handle transient Shopify rate-limit (throttle) errors.
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
             try:
@@ -67,6 +68,8 @@ class ShopifyGraphQLClient:
             if not errors:
                 return result
 
+            # If Shopify is throttling us, wait the recommended time and retry.
+            # Any other error type is a hard failure — no retry.
             if self._is_throttled_error(errors) and attempt < max_attempts:
                 wait_seconds = self._throttle_wait_seconds(errors, attempt)
                 print(
@@ -82,6 +85,7 @@ class ShopifyGraphQLClient:
 
     @staticmethod
     def _is_throttled_error(errors: Any) -> bool:
+        """Return True if any error in the list has the THROTTLED extension code."""
         if not isinstance(errors, list):
             return False
         for err in errors:
@@ -92,6 +96,13 @@ class ShopifyGraphQLClient:
 
     @staticmethod
     def _throttle_wait_seconds(errors: List[Dict[str, Any]], attempt: int) -> int:
+        """
+        Calculate how long to wait before retrying after a throttle error.
+
+        Shopify includes a windowResetAt timestamp in the error payload.
+        We use it when available so we don't wait longer than necessary.
+        Falls back to an exponential-ish default (3s * attempt, capped at 30s).
+        """
         default_wait = min(30, 3 * attempt)
         for err in errors:
             extensions = (err or {}).get("extensions") or {}
@@ -278,6 +289,7 @@ class ShopifyGraphQLClient:
         Returns:
             Mapping: product_gid -> normalized product image record.
         """
+        # Deduplicate IDs before hitting the API to avoid redundant fetches.
         unique_ids: List[str] = []
         seen = set()
         for pid in product_gids:
@@ -336,15 +348,18 @@ class ShopifyGraphQLClient:
         }
         """
 
+        # Shopify's nodes() lookup accepts at most 250 IDs per request.
         batch_size = max(1, min(batch_size, 250))
         records: Dict[str, Dict[str, Any]] = {}
 
+        # Process in pages so large ID lists don't exceed the per-request limit.
         for start in range(0, len(unique_ids), batch_size):
             batch = unique_ids[start:start + batch_size]
             result = self.query(graphql_query, variables={"ids": batch})
             nodes = result.get("data", {}).get("nodes", [])
 
             for node in nodes:
+                # nodes() can return non-Product types (e.g. variants) — skip them.
                 if not node or node.get("__typename") != "Product":
                     continue
                 record = self._build_product_image_record(node)

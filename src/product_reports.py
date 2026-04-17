@@ -12,12 +12,16 @@ from .shopify_client import ShopifyGraphQLClient
 
 
 def _year_bounds(year: int) -> tuple[str, str]:
+    """Return the ISO date strings for Jan 1 and Dec 31 of the given year."""
     return f"{year}-01-01", f"{year}-12-31"
 
 
 def build_annual_products_query(*, year: int, descending: bool = True, limit: int = 20) -> str:
     """
     Build the exact top/underperforming products query requested by the user.
+
+    Uses GROUP BY product_title (not variant) so each product appears as one row.
+    WHERE product_variant_title IS NOT NULL removes order-level rows without a product.
     """
     since, until = _year_bounds(year)
     direction = "DESC" if descending else "ASC"
@@ -67,10 +71,18 @@ def build_annual_dress_variant_query(*, year: int) -> str:
 
 
 def parse_product_rows(response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the rows list from a ShopifyQL tableData response."""
     return response.get("tableData", {}).get("rows", [])
 
 
 def _clean_totals_columns(rows: List[Dict[str, Any]]) -> None:
+    """
+    Remove ShopifyQL WITH TOTALS summary columns from every row.
+
+    ShopifyQL adds keys like `net_sales__totals` when WITH TOTALS is used.
+    These are aggregate summaries, not per-product data, so we strip them
+    before passing rows downstream.
+    """
     for row in rows:
         for key in list(row.keys()):
             if key.endswith("__totals"):
@@ -78,6 +90,7 @@ def _clean_totals_columns(rows: List[Dict[str, Any]]) -> None:
 
 
 def _to_float(value: Any) -> float:
+    """Safely convert any value to float, returning 0.0 on failure."""
     try:
         return float(value or 0)
     except (TypeError, ValueError):
@@ -85,10 +98,13 @@ def _to_float(value: Any) -> float:
 
 
 def _round_half_up(value: Any, places: int = 2) -> float:
+    """Round a number using standard half-up rounding (not Python's default banker's rounding)."""
     quantizer = Decimal("1").scaleb(-places)
     return float(Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP))
 
 
+# Matches a single variant segment that represents only a size (e.g. "S", "XL", "12 months").
+# Used to strip size-only segments when grouping dress variants into families.
 _SIZE_TOKEN_PATTERN = re.compile(
     r"^(?:"
     r"\d{1,2}(?:\s*(?:year|years|yr|yrs|month|months|mo|m))?|"
@@ -102,20 +118,29 @@ _SIZE_TOKEN_PATTERN = re.compile(
 
 
 def _normalize_variant_segment(segment: str) -> str:
+    """Strip punctuation and whitespace from a variant segment for reliable matching."""
     normalized = segment.strip().lower().replace(".", "")
     normalized = re.sub(r"[\s_-]+", "", normalized)
     return normalized
 
 
 def _is_size_only_segment(segment: str) -> bool:
+    """Return True if the segment is purely a size label (e.g. 'M', '6 months')."""
     return bool(_SIZE_TOKEN_PATTERN.match(_normalize_variant_segment(segment)))
 
 
 def _normalize_variant_family_title(raw_title: Any) -> str:
+    """
+    Strip size-only segments from a variant title to get the 'family' name.
+
+    For example, "Blue / Small" → "Blue" and "Floral / XL" → "Floral".
+    This lets us group all sizes of the same color/style together in the report.
+    """
     text = str(raw_title or "").strip()
     if not text:
         return "Unspecified"
 
+    # Shopify variant titles use " / " as a delimiter between option segments.
     segments = [part.strip() for part in re.split(r"\s*/\s*", text) if part.strip()]
     kept_segments = [segment for segment in segments if not _is_size_only_segment(segment)]
 
@@ -131,11 +156,13 @@ def select_ranked_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[
 
 
 def _is_dress_row(row: Dict[str, Any]) -> bool:
+    """Return True if the product title contains the word 'dress' (case-insensitive)."""
     title = str(row.get("product_title") or "").strip().lower()
     return "dress" in title
 
 
 def _finalize_metric(value: float) -> float | int:
+    """Return an int when the value is a whole number, otherwise round to 2 decimal places."""
     decimal_value = Decimal(str(value))
     if decimal_value == decimal_value.to_integral():
         return int(decimal_value)
@@ -143,6 +170,13 @@ def _finalize_metric(value: float) -> float | int:
 
 
 def _aggregate_dress_variant_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Collapse raw dress variant rows into variant-family buckets.
+
+    ShopifyQL returns one row per (product, variant) combination. This function
+    merges them so that "Blue / Small" and "Blue / Large" both count toward "Blue",
+    aggregating net_sales, items sold, gross_sales, and returns.
+    """
     grouped: Dict[tuple[str, str], Dict[str, Any]] = {}
 
     for row in rows:
@@ -196,6 +230,12 @@ def _aggregate_dress_variant_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
 
 
 def _rank_variant_rows(rows: List[Dict[str, Any]], limit: int = 20) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Split aggregated rows into top and bottom N lists.
+
+    Input rows are assumed to already be sorted by net_sales descending.
+    Bottom rows are reversed so the worst performer appears first.
+    """
     ranked = list(rows)
     limit_count = max(0, limit)
     top_rows = ranked[:limit_count]

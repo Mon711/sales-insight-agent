@@ -19,6 +19,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.product_reports import _normalize_variant_family_title
 
+# These HTML comment markers wrap the auto-generated tables block so it can be replaced
+# cleanly on each run without touching the rest of the markdown document.
 START_MARKER = "<!-- AUTO_ANNUAL_QUERY_TABLES_START -->"
 END_MARKER = "<!-- AUTO_ANNUAL_QUERY_TABLES_END -->"
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -27,6 +29,7 @@ OBSIDIAN_IMAGE_LINE_PATTERN = re.compile(r"^!\[\[([^\]]+)\]\]$")
 
 
 def _is_blank(value: Any) -> bool:
+    """Return True for None or whitespace-only strings."""
     if value is None:
         return True
     if isinstance(value, str) and not value.strip():
@@ -35,6 +38,7 @@ def _is_blank(value: Any) -> bool:
 
 
 def _as_float(value: Any) -> float | None:
+    """Convert a value to float, returning None for blank or unconvertible values."""
     if _is_blank(value):
         return None
     try:
@@ -44,6 +48,7 @@ def _as_float(value: Any) -> float | None:
 
 
 def _round_half_up(value: Any, places: int = 2) -> Decimal | None:
+    """Round to a given number of decimal places using half-up rounding."""
     amount = _as_float(value)
     if amount is None:
         return None
@@ -52,6 +57,7 @@ def _round_half_up(value: Any, places: int = 2) -> Decimal | None:
 
 
 def _fmt_currency(value: Any) -> str:
+    """Format a number as a dollar amount, e.g. 1234.5 → '$1,234.50'."""
     amount = _round_half_up(value, places=2)
     if amount is None:
         return ""
@@ -59,6 +65,7 @@ def _fmt_currency(value: Any) -> str:
 
 
 def _fmt_number(value: Any) -> str:
+    """Format a number with commas; omits decimals when the value is whole."""
     amount = _round_half_up(value, places=2)
     if amount is None:
         return ""
@@ -68,6 +75,7 @@ def _fmt_number(value: Any) -> str:
 
 
 def _fmt_percent(value: Any) -> str:
+    """Format a decimal ratio as a percentage, e.g. 0.123 → '12.3%'."""
     amount = _as_float(value)
     if amount is None:
         return ""
@@ -181,6 +189,7 @@ def _render_tables_block(data: Dict[str, Any]) -> str:
 
 
 def _strip_auto_tables_block(markdown: str) -> str:
+    """Remove a previously generated AUTO_ANNUAL_QUERY_TABLES block from the markdown."""
     pattern = re.compile(
         re.escape(START_MARKER) + r".*?" + re.escape(END_MARKER) + r"\n?",
         flags=re.DOTALL,
@@ -189,6 +198,12 @@ def _strip_auto_tables_block(markdown: str) -> str:
 
 
 def _remove_heading_section(markdown: str, target_heading: str) -> str:
+    """
+    Remove a named heading and all its content from the markdown.
+
+    Walks line-by-line and skips everything from the matching heading
+    until the next heading of equal or higher level.
+    """
     lines = markdown.splitlines()
     output: List[str] = []
     target = target_heading.strip().lower()
@@ -201,6 +216,7 @@ def _remove_heading_section(markdown: str, target_heading: str) -> str:
             i += 1
             continue
 
+        # Skip over the matched heading and all lines until the next same-or-higher heading.
         current_level = len(heading_match.group(1))
         i += 1
         while i < len(lines):
@@ -209,6 +225,7 @@ def _remove_heading_section(markdown: str, target_heading: str) -> str:
                 break
             i += 1
 
+        # Remove trailing blank lines left behind by the deletion.
         while output and not output[-1].strip():
             output.pop()
 
@@ -216,11 +233,13 @@ def _remove_heading_section(markdown: str, target_heading: str) -> str:
 
 
 def _line_is_product_image(line: str) -> bool:
+    """Return True if a line is a standalone product image embed (Markdown or Obsidian syntax)."""
     stripped = line.strip()
     markdown_match = MARKDOWN_IMAGE_LINE_PATTERN.match(stripped)
     if markdown_match:
         return "product_images/" in markdown_match.group(1).replace("\\", "/").lower()
 
+    # Obsidian uses ![[filename]] syntax instead of standard Markdown ![]().
     obsidian_match = OBSIDIAN_IMAGE_LINE_PATTERN.match(stripped)
     if obsidian_match:
         target = obsidian_match.group(1).split("|", 1)[0]
@@ -230,13 +249,20 @@ def _line_is_product_image(line: str) -> bool:
 
 
 def _strip_standalone_product_images(markdown: str) -> str:
+    """Remove any leftover standalone product image lines from the markdown body."""
     filtered_lines = [line for line in markdown.splitlines() if not _line_is_product_image(line)]
     compacted = "\n".join(filtered_lines)
+    # Collapse consecutive blank lines that appear after image removal.
     compacted = re.sub(r"\n{3,}", "\n\n", compacted)
     return compacted.strip() + "\n"
 
 
 def _insert_tables_after_executive_summary(markdown: str, block: str) -> str:
+    """
+    Place the tables block immediately after the Executive Summary section.
+
+    If no Executive Summary heading is found, the block is prepended to the document.
+    """
     lines = markdown.strip().splitlines()
     insert_at = None
 
@@ -247,6 +273,7 @@ def _insert_tables_after_executive_summary(markdown: str, block: str) -> str:
         if heading_match.group(2).strip().lower() != "executive summary":
             continue
 
+        # Scan past the Executive Summary body to find where the next section starts.
         current_level = len(heading_match.group(1))
         insert_at = idx + 1
         while insert_at < len(lines):
@@ -267,6 +294,13 @@ def _insert_tables_after_executive_summary(markdown: str, block: str) -> str:
 
 
 def ensure_tables(markdown_path: Path, annual_json_path: Path) -> None:
+    """
+    Inject up-to-date query result tables into the marketing report markdown.
+
+    Reads the existing markdown and annual JSON, strips any old auto-generated
+    tables block and leftover product images, then writes fresh tables after
+    the Executive Summary section.
+    """
     markdown = markdown_path.read_text(encoding="utf-8")
     data = json.loads(annual_json_path.read_text(encoding="utf-8"))
     block = _render_tables_block(data)

@@ -88,14 +88,16 @@ def main():
 
     # --- STEP 4: Save the Files ---
     print("\n[STEP 4] Saving annual JSON files...")
-    
+
     timestamp = datetime.now(timezone.utc).isoformat()
     saved_count = 0
+    # Collects one entry per enriched product row for a flat, easy-to-query index file.
     product_image_index = []
     year = int(annual_report_data.get("year", ANNUAL_REPORT_YEAR))
     since_year = f"{year}-01-01"
     until_year = f"{year}-12-31"
 
+    # Unpack report sections for clarity — each variable maps to a distinct query result.
     top_rows = annual_report_data.get("top_performers", [])
     under_rows = annual_report_data.get("underperformers", [])
     all_products_sold = annual_report_data.get("all_products_sold", {})
@@ -106,6 +108,7 @@ def main():
     dress_variant_bottom_rows = dress_variant_families.get("bottom_rows", [])
 
     annual_top_limit = min(20, TOP_PRODUCTS_IMAGE_LIMIT)
+    # Run image enrichment only if the Product API token scope is confirmed.
     if products_access_ok:
         top_image_summary, top_image_index_rows = enrich_channel_product_rows(
             client=client,
@@ -166,6 +169,7 @@ def main():
     product_image_index.extend(dress_top_image_index_rows)
     product_image_index.extend(dress_bottom_image_index_rows)
 
+    # Pre-slice convenience lists used by the AI agent and marketing report templates.
     top_20_products = select_ranked_rows(top_rows, limit=20)
     bottom_20_products = select_ranked_rows(under_rows, limit=20)
     top_5_products = select_ranked_rows(top_rows, limit=5)

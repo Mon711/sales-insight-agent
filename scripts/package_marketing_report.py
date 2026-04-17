@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+# Regex patterns for parsing Markdown elements during PDF rendering.
 IMAGE_LINK_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
 UNORDERED_BULLET_PATTERN = re.compile(r"^(\s*)[-*]\s+(.+)$")
@@ -27,6 +28,7 @@ ORDERED_BULLET_PATTERN = re.compile(r"^(\s*)(\d+)\.\s+(.+)$")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$")
 HTML_COMMENT_PATTERN = re.compile(r"^<!--.*-->$")
 
+# Normalize fancy/Unicode punctuation to plain ASCII so PDF rendering doesn't choke.
 UNICODE_PUNCTUATION_REPLACEMENTS = {
     "\u00a0": " ",
     "\u2007": " ",
@@ -51,6 +53,12 @@ UNICODE_PUNCTUATION_REPLACEMENTS = {
 
 
 def _sanitize_pdf_text(text: str) -> str:
+    """
+    Normalize Unicode and strip control characters before handing text to ReportLab.
+
+    NFKC normalization resolves ligatures and compatibility characters.
+    Control characters (category 'C') cause rendering errors in PDF fonts.
+    """
     normalized = unicodedata.normalize("NFKC", text)
     for source, replacement in UNICODE_PUNCTUATION_REPLACEMENTS.items():
         normalized = normalized.replace(source, replacement)
@@ -61,10 +69,16 @@ def _sanitize_pdf_text(text: str) -> str:
 
 
 def _extract_target(raw_target: str) -> str:
+    """
+    Parse a raw Markdown link target into a clean file path or URL.
+
+    Handles angle-bracket syntax (<path>) and optional title strings ("title").
+    """
     target = raw_target.strip()
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1].strip()
 
+    # Strip an optional inline title: ![alt](path "title") → path
     if " \"" in target and target.endswith('"'):
         maybe_path, _ = target.rsplit(" \"", 1)
         target = maybe_path.strip()
@@ -73,6 +87,7 @@ def _extract_target(raw_target: str) -> str:
 
 
 def _is_remote_target(target: str) -> bool:
+    """Return True if the target is a remote URL (http/https/data URI)."""
     lowered = target.lower()
     return lowered.startswith("http://") or lowered.startswith("https://") or lowered.startswith("data:")
 
@@ -100,6 +115,13 @@ def _find_image_source(
     reports_dir: Path,
     output_dir: Path,
 ) -> Path | None:
+    """
+    Resolve a Markdown image target to an actual file on disk.
+
+    Checks multiple candidate locations in priority order so the script works
+    whether assets are referenced from the markdown file, the reports dir, or
+    the already-packaged output folder. Returns None for remote URLs.
+    """
     if _is_remote_target(target):
         return None
 
@@ -115,6 +137,7 @@ def _find_image_source(
     if path_obj.is_absolute():
         candidates.append(path_obj)
     else:
+        # Try relative to the markdown file first, then the output and reports directories.
         candidates.append((markdown_path.parent / path_obj).resolve())
         candidates.append((output_dir / path_obj).resolve())
         candidates.append((reports_dir / path_obj).resolve())
@@ -159,6 +182,13 @@ def _copy_asset_to_output(
 
 
 def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: Path) -> Tuple[int, int, int]:
+    """
+    Copy all local images referenced in the markdown into the output folder
+    and rewrite their links to relative paths so the PDF renders correctly.
+
+    Remote image links are replaced with a placeholder text so the PDF doesn't
+    contain broken embed attempts.
+    """
     text = markdown_path.read_text(encoding="utf-8")
     inserted_embeds = 0
     # Enforce local-only image embeds; strip remote CDN links if present.
@@ -190,6 +220,7 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
             output_dir=output_dir,
         )
         copied_count += 1
+        # Use a path relative to the markdown file so links are self-contained.
         relative_target = destination.relative_to(markdown_path.parent.resolve()).as_posix()
         rewritten_count += 1
         return f"![{alt_text}]({relative_target})"
@@ -200,15 +231,28 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
 
 
 def _inline_markdown_to_paragraph_html(text: str) -> str:
+    """
+    Convert inline Markdown to the small subset of HTML that ReportLab's Paragraph accepts.
+
+    Handles bold (**text**), italic (*text*), inline code (`text`), and links ([label](url)).
+    HTML-escapes special characters first to prevent injection into the XML-like tag stream.
+    """
     escaped = html.escape(_sanitize_pdf_text(text.strip()))
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"\*(.+?)\*", r"<i>\1</i>", escaped)
     escaped = re.sub(r"`([^`]+)`", r"<font name='Courier'>\1</font>", escaped)
+    # PDFs can't make links clickable in plain ReportLab, so collapse to "label (url)".
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", escaped)
     return escaped
 
 
 def _build_table_image_cell(image_target: str, markdown_path: Path, max_size: float):
+    """
+    Build a scaled ReportLab Image for use inside a table cell.
+
+    Scales the image proportionally so neither dimension exceeds max_size.
+    Returns None if the file doesn't exist.
+    """
     from reportlab.platypus import Image as RLImage
 
     image_path = (markdown_path.parent / image_target).resolve()
@@ -216,6 +260,7 @@ def _build_table_image_cell(image_target: str, markdown_path: Path, max_size: fl
         return None
 
     rl_image = RLImage(str(image_path))
+    # Scale to fit within a square of max_size without distorting aspect ratio.
     width_ratio = max_size / rl_image.drawWidth if rl_image.drawWidth else 1
     height_ratio = max_size / rl_image.drawHeight if rl_image.drawHeight else 1
     scale_ratio = min(width_ratio, height_ratio, 1)
@@ -225,6 +270,11 @@ def _build_table_image_cell(image_target: str, markdown_path: Path, max_size: fl
 
 
 def _build_table_cell(cell_text: str, paragraph_style, markdown_path: Path, image_max_size: float):
+    """
+    Build a ReportLab flowable for a single table cell.
+
+    If the entire cell is an image link, return a scaled image; otherwise render as a Paragraph.
+    """
     from reportlab.platypus import Paragraph
 
     stripped = cell_text.strip()
@@ -238,6 +288,11 @@ def _build_table_cell(cell_text: str, paragraph_style, markdown_path: Path, imag
 
 
 def _table_col_widths(headers: List[str], inch_value: float):
+    """
+    Return fixed column widths for known table shapes, or None to let ReportLab auto-size.
+
+    Hand-tuned to fit both table layouts on a US Letter page with 0.7" margins.
+    """
     normalized = [header.strip().lower() for header in headers]
     if normalized == [
         "image",
@@ -283,6 +338,7 @@ def _table_col_widths(headers: List[str], inch_value: float):
 
 
 def _table_alignment_styles(headers: List[str]):
+    """Return column alignment overrides for known table shapes (numbers right-aligned)."""
     normalized = [header.strip().lower() for header in headers]
     if normalized == [
         "image",
@@ -317,6 +373,13 @@ def _table_alignment_styles(headers: List[str]):
 
 
 def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
+    """
+    Render a Markdown file to a PDF using ReportLab.
+
+    Parses the markdown line-by-line and converts each element (headings,
+    paragraphs, bullets, tables, images, code blocks) to the appropriate
+    ReportLab flowable, then builds the document.
+    """
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import LETTER
@@ -382,13 +445,16 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
     flowables = []
     in_code_block = False
     code_lines: List[str] = []
+    # Tracks whether the last added flowable was a Spacer, to avoid double-spacing blank lines.
     last_was_spacer = False
     i = 0
 
+    # Single-pass line processor: each element type is detected and handled in priority order.
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
 
+        # Toggle code block mode on ``` fences; flush accumulated lines when closing.
         if stripped.startswith("```"):
             if in_code_block:
                 flowables.append(Preformatted("\n".join(code_lines), code_style))
@@ -405,10 +471,12 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             i += 1
             continue
 
+        # Skip HTML comment lines (e.g. the AUTO_ANNUAL_QUERY_TABLES markers).
         if HTML_COMMENT_PATTERN.match(stripped):
             i += 1
             continue
 
+        # Detect a Markdown table: header row followed immediately by a separator row.
         if stripped.startswith("|") and i + 1 < len(lines) and TABLE_SEPARATOR_PATTERN.match(lines[i + 1].strip()):
             header_cells = _split_markdown_table_row(lines[i])
             table_rows: List[List[str]] = [header_cells]
@@ -440,7 +508,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             table = Table(
                 normalized_rows,
                 colWidths=_table_col_widths(header_cells, inch),
-                repeatRows=1,
+                repeatRows=1,  # Repeat the header row on each new page
                 hAlign="LEFT",
             )
             table.setStyle(
@@ -457,6 +525,7 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
                     + _table_alignment_styles(header_cells)
                 )
             )
+            # Product image columns need CENTER/MIDDLE alignment — applied as an override.
             if header_cells and header_cells[0].strip().lower() == "image":
                 table.setStyle(
                     TableStyle(
