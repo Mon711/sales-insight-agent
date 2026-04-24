@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
 
+from .brand_profiles import BrandProfile, resolve_brand_profile
+
 load_dotenv()
 
 
@@ -25,15 +27,37 @@ class ShopifyGraphQLClient:
         SHOPIFY_ACCESS_TOKEN — admin API access token (needs read_reports scope)
     """
 
-    def __init__(self):
-        self.shop_name = os.getenv("SHOPIFY_SHOP_NAME")
-        self.access_token = os.getenv("SHOPIFY_ACCESS_TOKEN")
+    def __init__(
+        self,
+        *,
+        brand_slug: Optional[str] = None,
+        shop_name: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ):
+        self.brand_profile: Optional[BrandProfile] = (
+            resolve_brand_profile(brand_slug) if brand_slug else None
+        )
+        self.brand_slug = self.brand_profile.slug if self.brand_profile else None
+        self.brand_name = self.brand_profile.display_name if self.brand_profile else None
+
+        self.shop_name = shop_name or self._get_env_value(
+            self._candidate_env_names("SHOPIFY_SHOP_NAME")
+        )
+        self.access_token = access_token or self._get_env_value(
+            self._candidate_env_names("SHOPIFY_ACCESS_TOKEN")
+        )
 
         if not self.shop_name or not self.access_token:
+            brand_hint = ""
+            if self.brand_profile:
+                brand_hint = (
+                    f" for brand '{self.brand_profile.display_name}' "
+                    f"({self.brand_profile.slug})"
+                )
             raise ValueError(
-                "Missing required environment variables:\n"
-                "  SHOPIFY_SHOP_NAME (e.g., 'mystore')\n"
-                "  SHOPIFY_ACCESS_TOKEN (your admin API access token)\n"
+                f"Missing required environment variables{brand_hint}:\n"
+                f"  {self._candidate_env_names('SHOPIFY_SHOP_NAME')[0]} (preferred) or SHOPIFY_SHOP_NAME\n"
+                f"  {self._candidate_env_names('SHOPIFY_ACCESS_TOKEN')[0]} (preferred) or SHOPIFY_ACCESS_TOKEN\n"
                 "Please set these before running the script."
             )
 
@@ -42,6 +66,23 @@ class ShopifyGraphQLClient:
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": self.access_token,
         }
+
+    def _candidate_env_names(self, suffix: str) -> List[str]:
+        """Return env var names to try for a given credential suffix."""
+        names: List[str] = []
+        if self.brand_profile:
+            names.append(self.brand_profile.env_var(suffix))
+        names.append(suffix)
+        return names
+
+    @staticmethod
+    def _get_env_value(names: List[str]) -> Optional[str]:
+        """Return the first non-empty environment value from a list of variable names."""
+        for name in names:
+            value = os.getenv(name)
+            if value:
+                return value
+        return None
 
     def query(self, query_string: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

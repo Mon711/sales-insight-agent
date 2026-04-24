@@ -15,6 +15,7 @@ import sys
 from datetime import datetime, timezone
 
 # We import our specialized tools from the 'src' folder
+from src.brand_profiles import resolve_brand_profile
 from src.shopify_client import ShopifyGraphQLClient
 from src.product_reports import run_annual_report, select_ranked_rows
 from src.image_enrichment import (
@@ -25,6 +26,7 @@ from src.image_enrichment import (
 
 ANNUAL_REPORT_YEAR = 2025
 DEFAULT_REPORTS_BASE_DIR = os.path.expanduser("~/Desktop/annual_report_runs")
+REPORT_BRAND_SLUG = os.getenv("REPORT_BRAND_SLUG", "eddy")
 
 
 def get_reports_source_dir(base_dir: str | None = None):
@@ -39,21 +41,28 @@ def get_reports_source_dir(base_dir: str | None = None):
 
 
 def main():
+    report_brand_profile = resolve_brand_profile(REPORT_BRAND_SLUG)
+    report_brand_display_name = os.getenv("REPORT_BRAND_DISPLAY_NAME", report_brand_profile.display_name)
+
     print("=" * 60)
-    print(f"Shopify Sales Insight Agent — Annual Report ({ANNUAL_REPORT_YEAR})")
+    print(
+        "Shopify Sales Insight Agent — Annual Report "
+        f"({ANNUAL_REPORT_YEAR}) for {report_brand_display_name}"
+    )
     print("=" * 60)
 
     # --- STEP 0: Create the Output Folder ---
     reports_dir = get_reports_source_dir()
     output_root_dir = os.getenv("REPORT_OUTPUT_DIR", reports_dir)
     os.makedirs(output_root_dir, exist_ok=True)
-    print(f"\n[STEP 0] Saving report JSON to: {reports_dir}")
+    print(f"\n[STEP 0] Brand: {report_brand_display_name} ({report_brand_profile.slug})")
+    print(f"[STEP 0] Saving report JSON to: {reports_dir}")
     print(f"[STEP 0] Saving report assets to: {output_root_dir}")
 
     # --- STEP 1: Connect to Shopify ---
     print("\n[STEP 1] Connecting to Shopify...")
     try:
-        client = ShopifyGraphQLClient()
+        client = ShopifyGraphQLClient(brand_slug=report_brand_profile.slug)
         print(f"✓ Connected to store: {client.shop_name}")
     except Exception as e:
         print(f"✗ Connection failed: {e}")
@@ -177,8 +186,12 @@ def main():
 
     annual_output = {
         "generated_at": timestamp,
+        "brand": {
+            "slug": report_brand_profile.slug,
+            "display_name": report_brand_display_name,
+        },
         "report_period": {"since": since_year, "until": until_year},
-        "report_name": f"annual_performance_{year}",
+        "report_name": f"{report_brand_profile.slug}_annual_performance_{year}",
         "queries": annual_report_data.get("queries", {}),
         "top_performers": {
             "query_year": year,

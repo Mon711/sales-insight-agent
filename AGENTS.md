@@ -42,6 +42,15 @@ SHOPIFY_SHOP_NAME=your-shop-name
 SHOPIFY_ACCESS_TOKEN=your-access-token
 ```
 
+For multiple brands, you can keep brand-prefixed credentials side by side:
+
+```bash
+EDDY_SHOPIFY_SHOP_NAME=eddy-store-name
+EDDY_SHOPIFY_ACCESS_TOKEN=eddy-access-token
+STEELE_SHOPIFY_SHOP_NAME=steele-store-name
+STEELE_SHOPIFY_ACCESS_TOKEN=steele-access-token
+```
+
 The access token requires the **`read_reports`** scope (enables ShopifyQL).
 For product-image enrichment, it also needs **`read_products`**.
 
@@ -63,7 +72,7 @@ This will:
 
 ### No Hardcoded Secrets
 - Never hardcode API credentials, access tokens, or shop names.
-- Always read from environment variables: `SHOPIFY_SHOP_NAME`, `SHOPIFY_ACCESS_TOKEN`.
+- Always read from environment variables, either generic or brand-prefixed: `SHOPIFY_SHOP_NAME`, `SHOPIFY_ACCESS_TOKEN`, `EDDY_SHOPIFY_SHOP_NAME`, `STEELE_SHOPIFY_SHOP_NAME`, and so on.
 - `.env` files are in `.gitignore`.
 
 ### No Sample Data
@@ -104,9 +113,10 @@ Future: may integrate an LLM API directly into the repo.
 ### Codex Entry Point
 
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
-The terminal-friendly wrapper is `./scripts/marketing_report.sh`.
+The brand-aware terminal wrapper is `./scripts/brand_analysis.sh <brand>`.
+The older `./scripts/annual_report_2025.sh` wrapper now delegates to Eddy for compatibility.
 The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
-The wrapper now also bundles image assets into the Desktop output folder and exports `MARKETING_REPORT.pdf` for portable sharing.
+The wrapper now also bundles image assets into the Desktop output folder and exports a brand-specific PDF for portable sharing.
 
 ---
 
