@@ -25,7 +25,7 @@ from src.image_enrichment import (
 )
 
 ANNUAL_REPORT_YEAR = 2025
-DEFAULT_REPORTS_BASE_DIR = os.path.expanduser("~/Desktop/annual_report_runs")
+DEFAULT_REPORTS_BASE_DIR = "/Users/mrinalsood/temp/annual_report_runs"
 REPORT_BRAND_SLUG = os.getenv("REPORT_BRAND_SLUG", "eddy")
 
 

@@ -1,6 +1,6 @@
 description = "Generate a marketing analysis report from the latest sales data"
 prompt = """
-1. Activate the `$marketing-analyst` skill for analysis and the `$pdf-stylist` skill for the final PDF-ready rewrite.
+1. Activate the `$marketing-analyst` skill for analysis and prepare PDF-ready markdown for the generic PDF workflow.
 2. Run the sales pipeline so the newest JSON reports exist:
    !{python run_reports.py}
 3. Find the latest `reports/files_generation_X/` folder.

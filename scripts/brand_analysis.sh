@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+output_root="${REPORT_OUTPUT_ROOT:-/Users/mrinalsood/temp}"
+
 normalize_brand_slug() {
   local value="${1:-}"
   value="${value#/}"
@@ -31,7 +33,7 @@ next_output_number() {
     if [[ "$num" =~ ^[0-9]+$ ]] && (( num > max_num )); then
       max_num="$num"
     fi
-  done < <(find "$HOME/Desktop" -maxdepth 1 -type d -name "${brand_slug}_annual_insights_*" 2>/dev/null || true)
+  done < <(find "$output_root" -maxdepth 1 -type d -name "${brand_slug}_annual_insights_*" 2>/dev/null || true)
 
   echo $((max_num + 1))
 }
@@ -40,7 +42,8 @@ brand_slug_input="${1:-${REPORT_BRAND_SLUG:-eddy}}"
 brand_slug="$(normalize_brand_slug "$brand_slug_input")"
 brand_name="${REPORT_BRAND_DISPLAY_NAME:-$(brand_display_name "$brand_slug")}"
 report_number="$(next_output_number "$brand_slug")"
-output_dir="$HOME/Desktop/${brand_slug}_annual_insights_${report_number}"
+mkdir -p "$output_root"
+output_dir="$output_root/${brand_slug}_annual_insights_${report_number}"
 reports_base_dir="$output_dir/report_source"
 report_assets_dir="$output_dir/report_assets"
 
@@ -73,12 +76,12 @@ pdf_output="$output_dir/ANNUAL_REPORT_2025_${brand_slug}.pdf"
 
 echo "[2/3] Asking Codex to write the annual 2025 Markdown report for $brand_name..."
 echo "Using Codex model: $codex_model (reasoning effort: $codex_reasoning_effort)"
-codex exec --cd "$repo_root" --full-auto --color never \
+  codex exec --cd "$repo_root" --full-auto --color never \
   -m "$codex_model" \
   -c "model_reasoning_effort=\"$codex_reasoning_effort\"" \
-  --add-dir "$reports_base_dir" \
+  --add-dir "$output_dir" \
   --output-last-message "$markdown_output" \
-  "Activate the marketing-analyst skill for analysis and the pdf-stylist skill for the final PDF-ready rewrite. Read annual_report_2025.json from $reports_base_dir for the $brand_name brand. Write a concise executive report with these sections: Executive Summary, Methodology And Data Window, Top Performer Insights, Underperformer Insights, All Products Sold Insights, Dress Variant Family Insights, and Recommendations And Next Steps. Use a clean executive layout with one title, H2 major sections, H3 mini-insights, short paragraphs, and compact bullets. Keep the analysis concise but concrete. Do not add calculated columns, do not restate variant price for the top/bottom performer tables, and do not re-rank any rows. Do not output raw query tables. Do not embed any product images anywhere in the narrative. The pipeline will inject the canonical query tables with thumbnail images separately. Use top_performers.rows, underperformers.rows, all_products_sold.rows, dress_variant_families.top_rows, dress_variant_families.bottom_rows, product_image_focus.top_5_products, and product_image_focus.bottom_5_products as evidence for your analysis. For dress variant family tables, omit average order value and keep the tables to net sales, net items sold, gross sales, and returns. Add practical recommendations tied to the observed numbers and use visual fabric/material inference only when clearly labeled as inference. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
+  "Activate the marketing-analyst skill for analysis. Read annual_report_2025.json from $reports_base_dir for the $brand_name brand. Write a concise executive report with these sections: Executive Summary, Methodology And Data Window, Top Performer Insights, Underperformer Insights, All Products Sold Insights, Dress Variant Family Insights, and Recommendations And Next Steps. Use a clean executive layout with one title, H2 major sections, H3 mini-insights, short paragraphs, and compact bullets. Keep the analysis concise but concrete. Do not add calculated columns, do not restate variant price for the top/bottom performer tables, and do not re-rank any rows. Do not output raw query tables. Use local product images from product_image.local_path wherever visual context strengthens the narrative, and call out missing or ambiguous image matches explicitly. Keep product photo embeds to at most 2 per major channel section. Use top_performers.rows, underperformers.rows, all_products_sold.rows, dress_variant_families.top_rows, dress_variant_families.bottom_rows, product_image_focus.top_5_products, and product_image_focus.bottom_5_products as evidence for your analysis. For dress variant family tables, omit average order value and keep the tables to net sales, net items sold, gross sales, and returns. Add practical recommendations tied to the observed numbers and use visual fabric/material inference only when clearly labeled as inference. Return only markdown with no preamble or process notes." >"$codex_log" 2>&1 &
 codex_pid=$!
 start_ts=$(date +%s)
 while kill -0 "$codex_pid" 2>/dev/null; do

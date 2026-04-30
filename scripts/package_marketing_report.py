@@ -3,7 +3,7 @@
 Bundle report assets and export a PDF version of the marketing report.
 
 This script solves report portability issues by:
-1. Copying the whole reports/assets tree into the Desktop output folder.
+1. Copying the whole reports/assets tree into the local output folder.
 2. Rewriting markdown image links to local relative paths under report_assets/.
 3. Rendering a cleaner PDF with compact markdown, table support, and local images.
 """
@@ -636,7 +636,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Bundle markdown assets and export a PDF report.")
     parser.add_argument("--markdown", required=True, help="Path to MARKETING_REPORT.md")
     parser.add_argument("--reports-dir", required=True, help="Path to report_source")
-    parser.add_argument("--output-dir", required=True, help="Path to Desktop output folder")
+    parser.add_argument("--output-dir", required=True, help="Path to the local output folder")
     parser.add_argument("--pdf-name", default="MARKETING_REPORT.pdf", help="Output PDF filename")
     args = parser.parse_args()
 

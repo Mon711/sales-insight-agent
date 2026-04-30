@@ -102,7 +102,7 @@ If you enable product image pull, include **`read_products`** on the same token.
 - Enriches top 20 products per channel with Shopify product-image metadata/local assets when scope is available
 
 ### Layer 4: Chart Generation — `generate_graphs_only.py` and `src/visualizer.py`
-- Turns the latest report folder into the Desktop charts that support the report
+- Turns the latest report folder into the local charts that support the report
 - Uses `estimated_wholesale_revenue` for wholesale visualizations
 
 ### Layer 5: AI Analysis (manual for now)
@@ -114,9 +114,10 @@ Future: may integrate an LLM API directly into the repo.
 
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
 The brand-aware terminal wrapper is `./scripts/brand_analysis.sh <brand>`.
+The season-aware wrapper is `./scripts/season_analysis.sh <brand> <season>`.
 The older `./scripts/annual_report_2025.sh` wrapper now delegates to Eddy for compatibility.
 The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
-The wrapper now also bundles image assets into the Desktop output folder and exports a brand-specific PDF for portable sharing.
+The wrapper now bundles image assets into the report output folder and exports a brand-specific PDF for portable sharing.
 
 ---
 
