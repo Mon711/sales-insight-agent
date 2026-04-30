@@ -20,8 +20,15 @@ from pathlib import Path
 from typing import List, Tuple
 
 
-# Regex patterns for parsing Markdown elements during PDF rendering.
+# Regex patterns for parsing Markdown and HTML elements during PDF rendering.
 IMAGE_LINK_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+HTML_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+HTML_SRC_ATTR_PATTERN = re.compile(r'(\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
+HTML_FIGURE_START_PATTERN = re.compile(r"^\s*<figure\b[^>]*>\s*$", re.IGNORECASE)
+HTML_FIGURE_END_PATTERN = re.compile(r"^\s*</figure>\s*$", re.IGNORECASE)
+HTML_FIGCAPTION_PATTERN = re.compile(r"<figcaption\b[^>]*>(.*?)</figcaption>", re.IGNORECASE | re.DOTALL)
+HTML_IMAGE_ALT_PATTERN = re.compile(r'\balt\s*=\s*(["\'])(.*?)\1', re.IGNORECASE)
+HTML_IMAGE_WIDTH_PATTERN = re.compile(r'\bwidth\s*=\s*(["\']?)(\d+)\1', re.IGNORECASE)
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
 UNORDERED_BULLET_PATTERN = re.compile(r"^(\s*)[-*]\s+(.+)$")
 ORDERED_BULLET_PATTERN = re.compile(r"^(\s*)(\d+)\.\s+(.+)$")
@@ -92,6 +99,16 @@ def _is_remote_target(target: str) -> bool:
     return lowered.startswith("http://") or lowered.startswith("https://") or lowered.startswith("data:")
 
 
+def _parse_html_img_src(tag: str) -> tuple[str | None, str | None, str | None]:
+    src_match = HTML_SRC_ATTR_PATTERN.search(tag)
+    if not src_match:
+        return None, None, None
+
+    alt_match = HTML_IMAGE_ALT_PATTERN.search(tag)
+    width_match = HTML_IMAGE_WIDTH_PATTERN.search(tag)
+    return src_match.group(3), alt_match.group(2) if alt_match else None, width_match.group(2) if width_match else None
+
+
 def _split_markdown_table_row(line: str) -> List[str]:
     body = line.strip().strip("|")
     return [cell.strip() for cell in body.split("|")]
@@ -106,6 +123,45 @@ def _copy_reports_assets_tree(reports_dir: Path, output_dir: Path) -> int:
     destination_assets.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_assets, destination_assets, dirs_exist_ok=True)
     return sum(1 for p in destination_assets.rglob("*") if p.is_file())
+
+
+def _rewrite_html_img_tags(
+    text: str,
+    *,
+    markdown_path: Path,
+    reports_dir: Path,
+    output_dir: Path,
+) -> tuple[str, int, int]:
+    copied_count = 0
+    rewritten_count = 0
+
+    def replace(tag_match: re.Match[str]) -> str:
+        nonlocal copied_count, rewritten_count
+        tag = tag_match.group(0)
+        raw_src, _, _ = _parse_html_img_src(tag)
+        if not raw_src:
+            return tag
+        target = _extract_target(raw_src)
+        source = _find_image_source(
+            target=target,
+            markdown_path=markdown_path,
+            reports_dir=reports_dir,
+            output_dir=output_dir,
+        )
+        if source is None:
+            return tag
+        destination = _copy_asset_to_output(
+            source=source,
+            reports_dir=reports_dir,
+            output_dir=output_dir,
+        )
+        copied_count += 1
+        rewritten_count += 1
+        relative_target = destination.relative_to(markdown_path.parent.resolve()).as_posix()
+        return tag.replace(raw_src, relative_target)
+
+    updated = HTML_IMAGE_TAG_PATTERN.sub(replace, text)
+    return updated, copied_count, rewritten_count
 
 
 def _find_image_source(
@@ -196,6 +252,12 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
         lambda m: m.group(0) if not _is_remote_target(_extract_target(m.group(2))) else f"[Image not embedded locally: {m.group(1) or 'Product'}]",
         text,
     )
+    text, html_copied_count, html_rewritten_count = _rewrite_html_img_tags(
+        text,
+        markdown_path=markdown_path,
+        reports_dir=reports_dir,
+        output_dir=output_dir,
+    )
     copied_count = 0
     rewritten_count = 0
 
@@ -227,7 +289,7 @@ def bundle_markdown_assets(markdown_path: Path, reports_dir: Path, output_dir: P
 
     updated = IMAGE_LINK_PATTERN.sub(replace, text)
     markdown_path.write_text(updated, encoding="utf-8")
-    return copied_count, rewritten_count, inserted_embeds
+    return copied_count + html_copied_count, rewritten_count + html_rewritten_count, inserted_embeds
 
 
 def _inline_markdown_to_paragraph_html(text: str) -> str:
@@ -267,6 +329,88 @@ def _build_table_image_cell(image_target: str, markdown_path: Path, max_size: fl
     rl_image.drawWidth *= scale_ratio
     rl_image.drawHeight *= scale_ratio
     return rl_image
+
+
+def _build_scaled_image(image_path: Path, max_width: float):
+    from reportlab.platypus import Image as RLImage
+
+    if not image_path.exists():
+        return None
+
+    rl_image = RLImage(str(image_path))
+    width_ratio = max_width / rl_image.drawWidth if rl_image.drawWidth else 1
+    scale_ratio = min(width_ratio, 1)
+    rl_image.drawWidth *= scale_ratio
+    rl_image.drawHeight *= scale_ratio
+    rl_image.hAlign = "CENTER"
+    return rl_image
+
+
+def _extract_html_figure_block(lines: List[str], start_index: int) -> tuple[str, int]:
+    block_lines: List[str] = []
+    i = start_index
+    while i < len(lines):
+        block_lines.append(lines[i])
+        if HTML_FIGURE_END_PATTERN.match(lines[i].strip()):
+            break
+        i += 1
+    return "\n".join(block_lines), min(i + 1, len(lines))
+
+
+def _build_html_figure_flowables(block: str, markdown_path: Path, image_max_width: float):
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, Spacer
+
+    image_tag = HTML_IMAGE_TAG_PATTERN.search(block)
+    if not image_tag:
+        return []
+
+    src, alt_text, width_text = _parse_html_img_src(image_tag.group(0))
+    if not src:
+        return []
+
+    image_target = _extract_target(src)
+    image_path = (markdown_path.parent / image_target).resolve()
+    if not image_path.exists():
+        missing_style = ParagraphStyle(
+            "FigureMissing",
+            parent=getSampleStyleSheet()["BodyText"],
+            fontSize=8,
+            textColor=colors.grey,
+        )
+        return [Paragraph(_inline_markdown_to_paragraph_html(f"[Missing image: {image_target}]"), missing_style)]
+
+    try:
+        width_hint = float(width_text) if width_text else None
+    except ValueError:
+        width_hint = None
+
+    if width_hint:
+        image_max_width = min(image_max_width, width_hint / 96.0 * inch)
+
+    rl_image = _build_scaled_image(image_path, image_max_width)
+    if rl_image is None:
+        return []
+
+    caption_match = HTML_FIGCAPTION_PATTERN.search(block)
+    caption = caption_match.group(1).strip() if caption_match else ""
+    if not caption:
+        caption = alt_text or image_path.stem.replace("_", " ")
+
+    caption_style = ParagraphStyle(
+        "FigureCaption",
+        parent=getSampleStyleSheet()["BodyText"],
+        fontName="Helvetica-Oblique",
+        fontSize=7.8,
+        leading=9.2,
+        textColor=colors.grey,
+        alignment=1,
+        spaceBefore=2,
+        spaceAfter=4,
+    )
+    return [rl_image, Paragraph(_inline_markdown_to_paragraph_html(caption), caption_style), Spacer(1, 0.02 * inch)]
 
 
 def _build_table_cell(cell_text: str, paragraph_style, markdown_path: Path, image_max_size: float):
@@ -444,6 +588,8 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
 
     flowables = []
     in_code_block = False
+    in_html_figure_block = False
+    figure_lines: List[str] = []
     code_lines: List[str] = []
     # Tracks whether the last added flowable was a Spacer, to avoid double-spacing blank lines.
     last_was_spacer = False
@@ -471,8 +617,34 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             i += 1
             continue
 
+        if in_html_figure_block:
+            figure_lines.append(line.rstrip())
+            if HTML_FIGURE_END_PATTERN.match(stripped):
+                block = "\n".join(figure_lines)
+                flowables.extend(_build_html_figure_flowables(block, markdown_path, image_max_width=3.0 * inch))
+                in_html_figure_block = False
+                figure_lines = []
+            i += 1
+            continue
+
         # Skip HTML comment lines (e.g. the AUTO_ANNUAL_QUERY_TABLES markers).
         if HTML_COMMENT_PATTERN.match(stripped):
+            i += 1
+            continue
+
+        if HTML_FIGURE_START_PATTERN.match(stripped):
+            if HTML_FIGURE_END_PATTERN.match(stripped):
+                flowables.extend(_build_html_figure_flowables(line.rstrip(), markdown_path, image_max_width=3.0 * inch))
+                last_was_spacer = True
+            else:
+                in_html_figure_block = True
+                figure_lines = [line.rstrip()]
+            i += 1
+            continue
+
+        if HTML_IMAGE_TAG_PATTERN.fullmatch(stripped):
+            flowables.extend(_build_html_figure_flowables(f"<figure>{line.rstrip()}</figure>", markdown_path, image_max_width=3.0 * inch))
+            last_was_spacer = True
             i += 1
             continue
 
@@ -552,16 +724,12 @@ def export_pdf(markdown_path: Path, pdf_path: Path) -> None:
             image_target = _extract_target(image_match.group(2))
             image_path = (markdown_path.parent / image_target).resolve()
             if image_path.exists():
-                rl_image = RLImage(str(image_path))
                 normalized_target = image_target.replace("\\", "/").lower()
-                if "product_images/" in normalized_target:
+                max_width = 3.0 * inch if "product_images/" in normalized_target else 6.7 * inch
+                rl_image = _build_scaled_image(image_path, max_width)
+                if rl_image is None:
                     i += 1
                     continue
-                max_width = 7.0 * inch
-                if rl_image.drawWidth > max_width:
-                    ratio = max_width / rl_image.drawWidth
-                    rl_image.drawWidth = max_width
-                    rl_image.drawHeight = rl_image.drawHeight * ratio
                 flowables.append(rl_image)
                 flowables.append(Spacer(1, 0.06 * inch))
                 last_was_spacer = True

@@ -113,11 +113,9 @@ Future: may integrate an LLM API directly into the repo.
 ### Codex Entry Point
 
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
-The brand-aware terminal wrapper is `./scripts/brand_analysis.sh <brand>`.
-The season-aware wrapper is `./scripts/season_analysis.sh <brand> <season>`.
-The older `./scripts/annual_report_2025.sh` wrapper now delegates to Eddy for compatibility.
+The season-aware wrapper is `./scripts/season_analysis.sh <brand> <season> [comparison_season]`.
 The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
-The wrapper now bundles image assets into the report output folder and exports a brand-specific PDF for portable sharing.
+The wrapper bundles image assets into the report output folder and exports a PDF for portable sharing.
 
 ---
 
