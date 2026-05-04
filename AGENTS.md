@@ -114,7 +114,7 @@ Future: may integrate an LLM API directly into the repo.
 
 The Codex app command `report/marketing_report` is the repo workflow entry point for the full marketing pipeline.
 The season-aware wrapper is `./scripts/season_analysis.sh <brand> <season> [comparison_season]`.
-The reusable marketing skill lives in `.agents/skills/marketing-analyst/`.
+The reusable seasonal product analysis skill lives in `.agents/skills/season-product-analyst/`.
 The wrapper bundles image assets into the report output folder and exports a PDF for portable sharing.
 
 ---

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Season Product Analyst"
+  short_description: "Write season-wise Shopify product reports and same-season comparisons"
+  default_prompt: "Write a designer-facing season report from the latest season analysis JSON. Use the season product rows, comparison summary when present, and local product images only when they directly support the insight. Keep the narrative concise, avoid absolute filesystem paths, and compare the same season across years when comparison data is available."

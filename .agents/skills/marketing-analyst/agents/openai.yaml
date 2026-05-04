@@ -1,4 +1,0 @@
-interface:
-display_name: "Marketing Analyst"
-short_description: "Create the latest marketing report from Shopify sales data"
-default_prompt: "Generate one comprehensive marketing report from the newest reports/files_generation_X folder. Include separate sections for Online Store, POS, Wholesale, and Dropship/Partner channels, then finish with a cross-channel aggregate analysis and concrete recommendations for marketing, design, merchandising, and brand strategy."
