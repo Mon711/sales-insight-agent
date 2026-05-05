@@ -258,6 +258,36 @@ If `read_products` is missing, report generation still succeeds but image enrich
   - ID-based match and successful download
   - title-match ambiguity handling
   - top-limit behavior (20 per channel)
+
+## Phase 2.7 Addendum: Seasonal Official Product Detail + Visual-First Reports
+
+### Evidence Layers
+
+Season reports now combine three separate evidence layers:
+
+- **ShopifyQL commercial metrics**: sales, units, returns, return rate, discounts, product title, SKU, type, and product ID remain the commercial source of truth.
+- **Admin GraphQL product detail**: product descriptions, tags, selected options, variants, collections, media, and product-level metafields provide official product-detail evidence.
+- **Local product images**: images remain a first-class visual/design evidence layer for silhouette, proportion, styling, print scale, colour impression, drape, opacity, texture, and use case.
+
+Image analysis should enhance the qualitative read, but exact fabric composition and fibre percentages must only come from official product data. If exact composition is not present in official fields, reports should state `Official composition: Unknown` and label any image-based fabric read as `Visual inference`.
+
+### Product Detail Enrichment
+
+`src/shopify_client.py` now includes `fetch_product_detail_records_by_ids()`, which batches `nodes(ids:)` Admin GraphQL lookups and normalizes product detail into clean JSON. It resolves `shopify.*` metaobject metafields through reference display names, parses Shopify rich-text JSON for `custom.materials`, `custom.product_size`, and `custom.product_features`, and derives `official_product_attributes`.
+
+`src/season_reports.py` attaches the official detail record to each ShopifyQL row as `product_detail` and records `product_detail_enrichment_summary`. If product detail enrichment fails, the report still generates from ShopifyQL rows and image enrichment, with the error recorded in the summary.
+
+### Report Prompt + Skill Contract
+
+`scripts/season_analysis.sh` and `.agents/skills/season-product-analyst/SKILL.md` now instruct Codex to produce visual-first Markdown reports using compact product cards, grids, boards, and evidence tables. Reports must stay generic across every season in `src/season_profiles.py` and every brand in `src/brand_profiles.py`; no Winter-specific or brand-specific product assumptions should be hardcoded.
+
+### Validation Added
+
+- Rich-text metafield parsing.
+- Metaobject reference label resolution.
+- Exact fabric composition is not invented when only generic material language exists.
+- Rows without product IDs do not crash product-detail enrichment.
+- Product-detail enrichment failures do not break ShopifyQL reporting.
   - metadata-only fallback when download fails
 
 ---

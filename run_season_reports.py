@@ -112,6 +112,10 @@ def main() -> int:
         "  ✓ Image enrichment summary: "
         f"{season_report_data.get('season_product_performance', {}).get('image_enrichment_summary', {})}"
     )
+    print(
+        "  ✓ Product detail enrichment summary: "
+        f"{season_report_data.get('product_detail_enrichment_summary', {})}"
+    )
 
     timestamp = datetime.now(timezone.utc).isoformat()
     report_filename = f"{brand_profile.slug}_{season_profile.slug}_report.json"
@@ -136,6 +140,7 @@ def main() -> int:
         "query_flags": season_report_data.get("query_flags", {}),
         "season_product_performance": season_report_data.get("season_product_performance", {}),
         "product_image_focus": season_report_data.get("product_image_focus", {}),
+        "product_detail_enrichment_summary": season_report_data.get("product_detail_enrichment_summary", {}),
         "product_count": season_report_data.get("product_count", 0),
         "product_access_ok": season_report_data.get("product_access_ok", False),
         "product_access_error": season_report_data.get("product_access_error"),

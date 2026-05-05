@@ -149,7 +149,7 @@ run_reports_log="$output_dir/run_season_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
 codex_model="${MODEL:-gpt-5.4}"
-codex_reasoning_effort="${REASONING_EFFORT:-low}"
+codex_reasoning_effort="${REASONING_EFFORT:-medium}"
 
 fetch_season_report() {
   local season_slug="$1"
@@ -173,7 +173,34 @@ build_single_prompt() {
   local season_json="$1"
   local season_slug="$2"
   cat <<EOF
-Activate the season-product-analyst skill for the analysis. Read ${season_json} and inspect the local product images under report_assets/product_images/${brand_slug}_${season_slug}/. Write one Markdown report for designers and creative directors, not a data dump. The report must use these sections: Executive Summary, Methodology and Data Window, Season-wise Performance, Product-level Analysis, Silhouette Analysis, Colour Analysis, Print Analysis, Fabric Analysis, Use Case Analysis, Returns Analysis, Core Silhouettes, Product Gaps, and Recommendations for Next Collection. Analyze every product row in the JSON and every available product image visually. Do not limit the narrative to top sellers, bottom sellers, top 10, bottom 10, or any other sample slice; those slices are only helper views. Include relevant local image embeds near the related discussion using product_image.local_path. Use compact figure-style image blocks with short captions and keep them small to medium sized so they read as part of the narrative. If an image is unclear, say so explicitly. If fabric composition is missing, label any visual fabric read as an inference. Compare sales, units, returns, return rate, and discounting when available. Give every product a clear verdict such as worked well, worked moderately, did not work, commercially risky, design-led but weak sales, strong sales but high returns, good candidate to repeat, or avoid or redesign. Keep the tone designer-friendly and concise. Do not mention local filesystem paths in the report. Return only markdown with no preamble or process notes.
+Activate the season-product-analyst skill for the analysis. Read ${season_json} and inspect the local product images under report_assets/product_images/${brand_slug}_${season_slug}/. Write one visual-first Markdown report for designers, merchandisers, Varun, and the creative director.
+
+Use exactly these sections: Executive visual summary, Methodology and data confidence note, Season performance snapshot, Product performance cards, Hero product grid, Underperformer/risk product grid, Silhouette grid, Colour board, Print board, Fabric/material evidence table, Use-case map, Returns-as-design-feedback table, Core repeatable ideas, Product gaps, Recommendations for next collection.
+
+Evidence rules:
+- ShopifyQL sales, returns, discounts, and units are the commercial source of truth.
+- Admin GraphQL product descriptions, tags, selected options, and metafields are official product-detail sources.
+- Local product images are visual evidence and should be used as a separate visual/design interpretation layer, not only as a backup.
+- Analyze the full season dataset, not only top/bottom helper slices.
+- Helper slices can support visual summaries, but conclusions must come from all rows.
+- Use product_detail.official_product_attributes where available for official material, colour, fit, neckline, sleeve, product features, product size, origin, and collection evidence.
+- Exact fabric composition and fibre percentages must only be shown if found in official product data. If exact composition is missing, write: Official composition: Unknown.
+- If image-based fabric interpretation is used, label it: Visual inference.
+- Never invent fabric composition, fibre percentages, care instructions, customer return reasons, or unsupported qualitative claims.
+- Return-related design causes are hypotheses unless directly supported by customer return reasons.
+
+Visual-first Markdown rules:
+- Use compact tables, product cards, grids, and figure blocks.
+- Include more product images near the relevant insight using product_image.local_path only.
+- Keep product images small to medium; use concise captions.
+- If image is missing, say image unavailable. If image is unclear, say image unclear.
+- Do not mention absolute local filesystem paths.
+- Do not use CDN image links.
+- Avoid long text-only sections and generic AI-style deck language.
+
+Product cards should include, where available: product image, product title, net sales, units sold, return rate, discount rate, official material/fabric, visual design read, and verdict. Allowed verdicts include Protect, Repeat, Refine, Redesign, Reduce, Avoid, Watch, Design-led but commercially weak, Strong sales but high returns, Good idea, weak execution, Commercially strong, fit-risk, and Visual hero, margin-risk.
+
+Return only Markdown with no preamble, no process notes, and no tool logs.
 EOF
 }
 
@@ -184,7 +211,34 @@ build_comparison_prompt() {
   local season_a_name="$4"
   local season_b_name="$5"
   cat <<EOF
-Activate the season-product-analyst skill for the analysis. Read ${comparison_json} and inspect the local product images under report_assets/product_images/${brand_slug}_${season_a_slug}/ and report_assets/product_images/${brand_slug}_${season_b_slug}/. Write one Markdown report for designers and creative directors, not a data dump. This is a cross-season comparison report for ${season_a_name} versus ${season_b_name}, and the report must compare the same season across years rather than analyzing one season in isolation. Use these sections: Executive Summary, Methodology and Data Window, Cross-Season Performance, Product-level Comparison, Silhouette Comparison, Colour Comparison, Print Comparison, Fabric Comparison, Use Case Comparison, Returns Comparison, Core Silhouettes, Product Gaps, and Recommendations for Next Collection. Analyze every product row in both seasons and every available product image visually. Do not limit the narrative to top sellers, bottom sellers, top 10, bottom 10, or any other sample slice; those slices are only helper views. Include relevant local image embeds near the related discussion using product_image.local_path. Use compact figure-style image blocks with short captions and keep them small to medium sized so they read as part of the narrative. If an image is unclear, say so explicitly. If fabric composition is missing, label any visual fabric read as an inference. Compare sales, units, returns, return rate, discounting, and product mix across both seasons. Call out what repeated well, what improved, what weakened, and what should be repeated or edited for the next collection. Keep the tone designer-friendly and concise. Do not mention local filesystem paths in the report. Return only markdown with no preamble or process notes.
+Activate the season-product-analyst skill for the analysis. Read ${comparison_json} and inspect the local product images under report_assets/product_images/${brand_slug}_${season_a_slug}/ and report_assets/product_images/${brand_slug}_${season_b_slug}/. Write one visual-first Markdown report for designers, merchandisers, Varun, and the creative director. This is a same-family cross-year comparison for ${season_a_name} versus ${season_b_name}; compare the same season across years rather than analyzing one season in isolation.
+
+Use exactly these sections: Side-by-side season summary cards, Methodology and data confidence note, Category mix comparison, Hero product comparison grid, Repeated-style case studies if repeated styles exist, Silhouette comparison grid, Colour arc comparison, Print engine comparison, Fabric/material evidence comparison, Use-case comparison, Returns comparison, Diagnostic matrix, Next collection playbook.
+
+Evidence rules:
+- ShopifyQL sales, returns, discounts, and units are the commercial source of truth.
+- Admin GraphQL product descriptions, tags, selected options, and metafields are official product-detail sources.
+- Local product images are visual evidence and should be used as a separate visual/design interpretation layer, not only as a backup.
+- Analyze every product row in both seasons, not only top/bottom helper slices.
+- Helper slices can support visual summaries, but conclusions must come from all rows.
+- Use product_detail.official_product_attributes where available for official material, colour, fit, neckline, sleeve, product features, product size, origin, and collection evidence.
+- Exact fabric composition and fibre percentages must only be shown if found in official product data. If exact composition is missing, write: Official composition: Unknown.
+- If image-based fabric interpretation is used, label it: Visual inference.
+- Never invent fabric composition, fibre percentages, care instructions, customer return reasons, or unsupported qualitative claims.
+- Return-related design causes are hypotheses unless directly supported by customer return reasons.
+
+Visual-first Markdown rules:
+- Use compact tables, product cards, grids, figure blocks, side-by-side cards, and concise captions.
+- Include product images near the relevant insight using product_image.local_path only.
+- Keep product images small to medium.
+- If image is missing, say image unavailable. If image is unclear, say image unclear.
+- Do not mention absolute local filesystem paths.
+- Do not use CDN image links.
+- Avoid long text-only sections and generic AI-style deck language.
+
+Product cards should include, where available: product image, product title, net sales, units sold, return rate, discount rate, official material/fabric, visual design read, and verdict. Allowed verdicts include Protect, Repeat, Refine, Redesign, Reduce, Avoid, Watch, Design-led but commercially weak, Strong sales but high returns, Good idea, weak execution, Commercially strong, fit-risk, and Visual hero, margin-risk.
+
+Return only Markdown with no preamble, no process notes, and no tool logs.
 EOF
 }
 

@@ -8,6 +8,7 @@ report can do true image-led analysis.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -149,6 +150,108 @@ def _bottom_ranked_rows(rows: List[Dict[str, Any]], limit: int = 20) -> List[Dic
     return list(reversed(sliced))
 
 
+def _empty_product_detail_enrichment_summary() -> Dict[str, Any]:
+    """Return the product detail enrichment summary contract."""
+    return {
+        "product_ids_seen": 0,
+        "product_details_found": 0,
+        "product_details_missing": 0,
+        "official_materials_found": 0,
+        "official_fabric_compositions_found": 0,
+        "official_colours_found": 0,
+        "official_fit_fields_found": 0,
+        "metafield_access_ok": False,
+        "errors": [],
+    }
+
+
+def _matching_variant_for_row(
+    product_detail: Dict[str, Any],
+    row: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Return the product variant matching the ShopifyQL SKU row, when present."""
+    row_sku = str(row.get("product_variant_sku") or "").strip()
+    if not row_sku:
+        return None
+    for variant in product_detail.get("variants") or []:
+        if str(variant.get("sku") or "").strip() == row_sku:
+            return variant
+    return None
+
+
+def _attach_product_detail_to_rows(
+    *,
+    client: ShopifyGraphQLClient,
+    rows: List[Dict[str, Any]],
+    product_access_ok: bool,
+    product_access_error: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Attach official Admin GraphQL product details to ShopifyQL rows.
+
+    This enrichment is intentionally non-fatal. ShopifyQL remains the commercial
+    source of truth even when Product API detail fields are unavailable.
+    """
+    summary = _empty_product_detail_enrichment_summary()
+    if not product_access_ok:
+        summary["errors"].append(f"Product API unavailable: {product_access_error}")
+        for row in rows:
+            row["product_detail"] = None
+        return summary
+
+    gid_to_rows: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        product_gid = client.to_product_gid(row.get("product_id"))
+        if not product_gid:
+            row["product_detail"] = None
+            continue
+        gid_to_rows.setdefault(product_gid, []).append(row)
+
+    summary["product_ids_seen"] = len(gid_to_rows)
+    if not gid_to_rows:
+        summary["metafield_access_ok"] = True
+        return summary
+
+    try:
+        records = client.fetch_product_detail_records_by_ids(list(gid_to_rows.keys()))
+        summary["metafield_access_ok"] = True
+    except Exception as exc:
+        summary["errors"].append(f"Product detail enrichment failed: {exc}")
+        for row_group in gid_to_rows.values():
+            for row in row_group:
+                row["product_detail"] = None
+        return summary
+
+    summary["product_details_found"] = len(records)
+    summary["product_details_missing"] = max(0, len(gid_to_rows) - len(records))
+
+    for product_gid, row_group in gid_to_rows.items():
+        product_detail = records.get(product_gid)
+        for row in row_group:
+            if not product_detail:
+                row["product_detail"] = None
+                continue
+            row_detail = deepcopy(product_detail)
+            matching_variant = _matching_variant_for_row(row_detail, row)
+            if matching_variant:
+                row_detail["selected_option_values"] = matching_variant.get("selected_options") or {}
+                row_detail["selected_variant"] = matching_variant
+            row["product_detail"] = row_detail
+
+    for record in records.values():
+        attrs = record.get("official_product_attributes") or {}
+        if attrs.get("official_material_text"):
+            summary["official_materials_found"] += 1
+        if attrs.get("official_fabric_composition") not in [None, "", "Unknown"]:
+            summary["official_fabric_compositions_found"] += 1
+        if attrs.get("official_colour"):
+            summary["official_colours_found"] += 1
+        if attrs.get("official_fit"):
+            summary["official_fit_fields_found"] += 1
+
+    return summary
+
+
 def run_season_report(
     *,
     client: ShopifyGraphQLClient,
@@ -173,6 +276,12 @@ def run_season_report(
     _clean_totals_columns(rows)
 
     product_access_ok, product_access_error = client.check_read_products_access()
+    product_detail_summary = _attach_product_detail_to_rows(
+        client=client,
+        rows=rows,
+        product_access_ok=product_access_ok,
+        product_access_error=product_access_error,
+    )
     image_channel_key = f"{brand_slug}_{season_profile.slug}"
     top_limit = len(rows)
 
@@ -222,6 +331,7 @@ def run_season_report(
         "season_product_performance": {
             "query_year": None,
             "ranking": "net_sales_desc",
+            "product_detail_enrichment_summary": product_detail_summary,
             "image_enrichment_summary": image_summary,
             "rows": rows,
             "top_20_rows": top_rows,
@@ -240,6 +350,7 @@ def run_season_report(
             ),
         },
         "product_image_index": image_index_rows,
+        "product_detail_enrichment_summary": product_detail_summary,
         "product_count": len(rows),
         "product_access_ok": product_access_ok,
         "product_access_error": product_access_error,
