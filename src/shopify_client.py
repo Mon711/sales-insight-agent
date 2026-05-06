@@ -113,7 +113,72 @@ def _connection_nodes(connection: Any) -> List[Dict[str, Any]]:
     return nodes
 
 
-def _metafield_reference_labels(metafield: Optional[Dict[str, Any]]) -> Tuple[List[str], List[Dict[str, Any]]]:
+def _extract_metaobject_gids(value: Any) -> List[str]:
+    """Extract one or more metaobject GIDs from a metafield raw value."""
+    if value in [None, ""]:
+        return []
+
+    payload = value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("[") or stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+            except (TypeError, ValueError):
+                payload = value
+
+    found: List[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            for match in re.findall(r"gid://shopify/Metaobject/\d+", node):
+                if match not in found:
+                    found.append(match)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+        elif isinstance(node, dict):
+            for child in node.values():
+                walk(child)
+
+    walk(payload)
+    return found
+
+
+def _metaobject_reference_record(node: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a Metaobject node into a debug-friendly reference record."""
+    fields = [
+        {"key": field.get("key"), "value": field.get("value")}
+        for field in (node.get("fields") or [])
+        if isinstance(field, dict)
+    ]
+    return {
+        "id": node.get("id"),
+        "display_name": _clean_plain_text(node.get("displayName")) or None,
+        "fields": fields,
+    }
+
+
+def _metaobject_label(node: Dict[str, Any]) -> str:
+    """Return the best available human-readable label for a Metaobject."""
+    display_name = _clean_plain_text(node.get("displayName"))
+    if display_name:
+        return display_name
+    for field in (node.get("fields") or []):
+        if not isinstance(field, dict):
+            continue
+        if field.get("key") in {"name", "label", "title"} and field.get("value"):
+            label = _clean_plain_text(field.get("value"))
+            if label:
+                return label
+    return ""
+
+
+def _metafield_reference_labels(
+    metafield: Optional[Dict[str, Any]],
+    *,
+    resolved_nodes: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]]]:
     """Resolve Shopify metaobject reference metafields into readable labels."""
     if not metafield:
         return [], []
@@ -123,27 +188,22 @@ def _metafield_reference_labels(metafield: Optional[Dict[str, Any]]) -> Tuple[Li
     reference = metafield.get("reference")
     if isinstance(reference, dict):
         raw_nodes.append(reference)
+    raw_nodes.extend(node for node in (resolved_nodes or []) if isinstance(node, dict))
 
     labels: List[str] = []
     references: List[Dict[str, Any]] = []
     seen_labels: set[str] = set()
+    seen_references: set[str] = set()
     for node in raw_nodes:
-        fields = [
-            {"key": field.get("key"), "value": field.get("value")}
-            for field in (node.get("fields") or [])
-            if isinstance(field, dict)
-        ]
-        display_name = _clean_plain_text(node.get("displayName"))
-        fallback_values = [
-            _clean_plain_text(field.get("value"))
-            for field in fields
-            if field.get("key") in {"name", "label", "title"} and field.get("value")
-        ]
-        label = display_name or (fallback_values[0] if fallback_values else "")
+        reference_record = _metaobject_reference_record(node)
+        label = _metaobject_label(node)
         if label and label not in seen_labels:
             labels.append(label)
             seen_labels.add(label)
-        references.append({"display_name": display_name or None, "fields": fields})
+        signature = reference_record.get("id") or json.dumps(reference_record, sort_keys=True)
+        if signature not in seen_references:
+            references.append(reference_record)
+            seen_references.add(signature)
 
     return labels, references
 
@@ -153,6 +213,7 @@ def _normalize_metafield(
     *,
     rich_text: bool = False,
     references: bool = False,
+    resolved_nodes: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Normalize a Shopify metafield while preserving useful debug snippets."""
     payload = {
@@ -162,7 +223,11 @@ def _normalize_metafield(
     if rich_text:
         payload["text"] = shopify_rich_text_to_plain_text(payload["value"])
     if references:
-        labels, reference_records = _metafield_reference_labels(metafield)
+        payload["raw_gids"] = _extract_metaobject_gids(payload["value"])
+        labels, reference_records = _metafield_reference_labels(
+            metafield,
+            resolved_nodes=resolved_nodes,
+        )
         payload["labels"] = labels
         payload["references"] = reference_records
     return payload
@@ -287,6 +352,208 @@ def _first_non_empty(values: List[Any]) -> Optional[str]:
         if cleaned:
             return cleaned
     return None
+
+
+def _parse_material_segments(text: str) -> Dict[str, Optional[str]]:
+    """Split raw material text into composition, care, and origin sub-fields."""
+    cleaned = _clean_plain_text(text)
+    if not cleaned:
+        return {
+            "raw_text": None,
+            "composition_text": None,
+            "care_instructions": None,
+            "origin_country": None,
+        }
+
+    marker_patterns = [
+        ("care", re.compile(r"\b(?:Care(?:\s+Instructions)?|Wash(?:\s+Care)?)\s*:\s*", re.I)),
+        ("origin", re.compile(r"\bCountry\s+of\s+Origin\s*:\s*", re.I)),
+        ("origin", re.compile(r"\bMade\s+in\s+", re.I)),
+        ("origin", re.compile(r"\bDesigned\s+in\s+", re.I)),
+    ]
+    markers: List[Dict[str, Any]] = []
+    for marker_type, pattern in marker_patterns:
+        for match in pattern.finditer(cleaned):
+            markers.append(
+                {
+                    "type": marker_type,
+                    "start": match.start(),
+                    "end": match.end(),
+                }
+            )
+    markers.sort(key=lambda item: item["start"])
+
+    composition_text = cleaned
+    if markers:
+        composition_text = cleaned[: markers[0]["start"]].strip(" ;,.-")
+
+    care_instructions = None
+    origin_country = None
+    for index, marker in enumerate(markers):
+        next_start = markers[index + 1]["start"] if index + 1 < len(markers) else len(cleaned)
+        segment = cleaned[marker["end"]:next_start].strip(" ;,.-")
+        if not segment:
+            continue
+        if marker["type"] == "care" and not care_instructions:
+            care_instructions = segment
+        elif marker["type"] == "origin" and not origin_country:
+            origin_country = segment
+
+    return {
+        "raw_text": cleaned or None,
+        "composition_text": composition_text or None,
+        "care_instructions": care_instructions,
+        "origin_country": origin_country,
+    }
+
+
+def _title_colour_candidate(title: Any) -> Optional[str]:
+    """Extract a colour hint from the title suffix after a dash."""
+    text = _clean_plain_text(title)
+    if " - " not in text:
+        return None
+    return _clean_plain_text(text.split(" - ", 1)[1]) or None
+
+
+def _tag_colour_candidate(tags: List[Any]) -> Optional[str]:
+    """Extract a colour value from product tags like `Colour_Blue Polka`."""
+    for tag in tags or []:
+        text = _clean_plain_text(tag)
+        match = re.match(r"^(?:colour|color)[ _-]+(.+)$", text, re.I)
+        if not match:
+            continue
+        candidate = re.sub(r"[_-]+", " ", match.group(1))
+        candidate = _clean_plain_text(candidate)
+        if candidate:
+            return candidate
+    return None
+
+
+def _selected_colour_candidate(
+    selected_option_values: Dict[str, Any],
+    selected_variant_options: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
+    """Extract a colour value from selected option dictionaries."""
+    if selected_variant_options:
+        variant_colour = _extract_option_value(
+            selected_variant_options,
+            ["color", "colour"],
+        )
+        if variant_colour:
+            return variant_colour
+
+    for option_name, option_values in (selected_option_values or {}).items():
+        if option_name.lower() not in {"color", "colour"}:
+            continue
+        if isinstance(option_values, list):
+            return _first_non_empty(option_values)
+        return _clean_plain_text(option_values) or None
+    return None
+
+
+def _derive_official_product_attributes(
+    *,
+    title: Any,
+    description_text: str,
+    tags: List[Any],
+    metafields_normalized: Dict[str, Dict[str, Any]],
+    selected_option_values: Dict[str, Any],
+    selected_variant_options: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Derive a stable set of official product attributes from normalized fields."""
+    materials_metafield = metafields_normalized.get("materials") or {}
+    fabric_metafield = metafields_normalized.get("fabric") or {}
+    color_metafield = metafields_normalized.get("color_pattern") or {}
+    fit_metafield = metafields_normalized.get("fit") or {}
+    neckline_metafield = metafields_normalized.get("neckline") or {}
+    sleeve_metafield = metafields_normalized.get("sleeve_length_type") or {}
+    features_metafield = metafields_normalized.get("clothing_features") or {}
+    collection_metafield = metafields_normalized.get("collection_name") or {}
+    origin_metafield = metafields_normalized.get("origin_country") or {}
+    sibling_color_metafield = metafields_normalized.get("sibling_color") or {}
+    product_features_metafield = metafields_normalized.get("product_features") or {}
+    product_size_metafield = metafields_normalized.get("product_size") or {}
+
+    materials_text = materials_metafield.get("text") or ""
+    description_materials = _parse_material_segments(description_text)
+    material_segments = _parse_material_segments(materials_text)
+    fabric_labels = fabric_metafield.get("labels") or []
+    color_labels = color_metafield.get("labels") or []
+    fit_labels = fit_metafield.get("labels") or []
+    neckline_labels = neckline_metafield.get("labels") or []
+    sleeve_labels = sleeve_metafield.get("labels") or []
+    feature_labels = features_metafield.get("labels") or []
+    collection_labels = collection_metafield.get("labels") or []
+
+    composition_sources = [
+        ("custom.materials", material_segments.get("composition_text") or materials_text),
+        ("shopify.fabric", "; ".join(fabric_labels)),
+        ("descriptionHtml", description_materials.get("composition_text") or description_text),
+    ]
+    exact_composition = None
+    exact_source = None
+    for source, text in composition_sources:
+        exact_composition = _find_exact_fabric_composition(text)
+        if exact_composition:
+            exact_source = source
+            break
+
+    fabric_family = _extract_fabric_family(
+        material_segments.get("composition_text") or materials_text,
+        "; ".join(fabric_labels),
+        description_materials.get("composition_text") or description_text,
+    )
+
+    official_colour = _first_non_empty(
+        [
+            sibling_color_metafield.get("value"),
+            _selected_colour_candidate(selected_option_values, selected_variant_options),
+            _tag_colour_candidate(tags),
+            _title_colour_candidate(title),
+            "; ".join(color_labels),
+        ]
+    )
+    colour_source = None
+    if sibling_color_metafield.get("value"):
+        colour_source = "custom.sibling_color"
+    elif _selected_colour_candidate(selected_option_values, selected_variant_options):
+        colour_source = "variant.selectedOptions"
+    elif _tag_colour_candidate(tags):
+        colour_source = "product.tags"
+    elif _title_colour_candidate(title):
+        colour_source = "product.title"
+    elif color_labels:
+        colour_source = "shopify.color-pattern"
+
+    return {
+        "official_fabric_composition": exact_composition or "Unknown",
+        "official_fabric_source": exact_source,
+        "official_fabric_confidence": "high" if exact_composition else "none",
+        "official_material_text": material_segments.get("raw_text"),
+        "care_instructions": _first_non_empty(
+            [
+                material_segments.get("care_instructions"),
+                description_materials.get("care_instructions"),
+            ]
+        ),
+        "origin_country": _first_non_empty(
+            [
+                origin_metafield.get("value"),
+                material_segments.get("origin_country"),
+                description_materials.get("origin_country"),
+            ]
+        ),
+        "official_fabric_family": fabric_family,
+        "official_colour": official_colour,
+        "official_colour_source": colour_source,
+        "official_fit": "; ".join(fit_labels) or None,
+        "official_neckline": "; ".join(neckline_labels) or None,
+        "official_sleeve_length": "; ".join(sleeve_labels) or None,
+        "official_clothing_features": "; ".join(feature_labels) or None,
+        "official_collection_name": "; ".join(collection_labels) or None,
+        "official_product_features": product_features_metafield.get("text") or None,
+        "official_product_size": product_size_metafield.get("text") or None,
+    }
 
 
 class ShopifyGraphQLClient:
@@ -592,7 +859,26 @@ class ShopifyGraphQLClient:
         }
 
     @staticmethod
-    def _normalize_product_detail_record(product_node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _resolved_metaobject_nodes_for_metafield(
+        metafield: Optional[Dict[str, Any]],
+        resolved_metaobjects: Optional[Dict[str, Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        """Return second-pass resolved Metaobject nodes for a metafield's raw GIDs."""
+        if not metafield or not resolved_metaobjects:
+            return []
+        nodes: List[Dict[str, Any]] = []
+        for gid in _extract_metaobject_gids((metafield or {}).get("value")):
+            node = resolved_metaobjects.get(gid)
+            if node:
+                nodes.append(node)
+        return nodes
+
+    @classmethod
+    def _normalize_product_detail_record(
+        cls,
+        product_node: Dict[str, Any],
+        resolved_metaobjects: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Normalize a Product node into the product-detail JSON contract."""
         product_id = product_node.get("id")
         if not product_id:
@@ -601,19 +887,68 @@ class ShopifyGraphQLClient:
         description_text = description_html_to_text(product_node.get("descriptionHtml"))
 
         metafields_normalized = {
-            "fabric": _normalize_metafield(product_node.get("fabric"), references=True),
-            "color_pattern": _normalize_metafield(product_node.get("colorPattern"), references=True),
-            "fit": _normalize_metafield(product_node.get("fit"), references=True),
-            "neckline": _normalize_metafield(product_node.get("neckline"), references=True),
-            "sleeve_length_type": _normalize_metafield(product_node.get("sleeveLengthType"), references=True),
-            "clothing_features": _normalize_metafield(product_node.get("clothingFeatures"), references=True),
+            "fabric": _normalize_metafield(
+                product_node.get("fabric"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("fabric"),
+                    resolved_metaobjects,
+                ),
+            ),
+            "color_pattern": _normalize_metafield(
+                product_node.get("colorPattern"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("colorPattern"),
+                    resolved_metaobjects,
+                ),
+            ),
+            "fit": _normalize_metafield(
+                product_node.get("fit"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("fit"),
+                    resolved_metaobjects,
+                ),
+            ),
+            "neckline": _normalize_metafield(
+                product_node.get("neckline"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("neckline"),
+                    resolved_metaobjects,
+                ),
+            ),
+            "sleeve_length_type": _normalize_metafield(
+                product_node.get("sleeveLengthType"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("sleeveLengthType"),
+                    resolved_metaobjects,
+                ),
+            ),
+            "clothing_features": _normalize_metafield(
+                product_node.get("clothingFeatures"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("clothingFeatures"),
+                    resolved_metaobjects,
+                ),
+            ),
             "materials": _normalize_metafield(product_node.get("materials"), rich_text=True),
             "product_size": _normalize_metafield(product_node.get("productSize"), rich_text=True),
             "product_features": _normalize_metafield(product_node.get("productFeatures"), rich_text=True),
             "origin_country": _normalize_metafield(product_node.get("originCountry")),
             "siblings": _normalize_metafield(product_node.get("siblings")),
             "sibling_color": _normalize_metafield(product_node.get("siblingColor")),
-            "collection_name": _normalize_metafield(product_node.get("collectionName"), references=True),
+            "collection_name": _normalize_metafield(
+                product_node.get("collectionName"),
+                references=True,
+                resolved_nodes=cls._resolved_metaobject_nodes_for_metafield(
+                    product_node.get("collectionName"),
+                    resolved_metaobjects,
+                ),
+            ),
         }
 
         variants = []
@@ -664,71 +999,13 @@ class ShopifyGraphQLClient:
                 }
             )
 
-        materials_text = metafields_normalized["materials"].get("text") or ""
-        fabric_labels = metafields_normalized["fabric"].get("labels") or []
-        color_labels = metafields_normalized["color_pattern"].get("labels") or []
-        fit_labels = metafields_normalized["fit"].get("labels") or []
-        neckline_labels = metafields_normalized["neckline"].get("labels") or []
-        sleeve_labels = metafields_normalized["sleeve_length_type"].get("labels") or []
-        feature_labels = metafields_normalized["clothing_features"].get("labels") or []
-        collection_labels = metafields_normalized["collection_name"].get("labels") or []
-
-        composition_sources = [
-            ("custom.materials", materials_text),
-            ("shopify.fabric", "; ".join(fabric_labels)),
-            ("descriptionHtml", description_text),
-        ]
-        exact_composition = None
-        exact_source = None
-        for source, text in composition_sources:
-            exact_composition = _find_exact_fabric_composition(text)
-            if exact_composition:
-                exact_source = source
-                break
-
-        fabric_family = _extract_fabric_family(
-            materials_text,
-            "; ".join(fabric_labels),
-            description_text,
+        official_product_attributes = _derive_official_product_attributes(
+            title=product_node.get("title"),
+            description_text=description_text,
+            tags=list(product_node.get("tags") or []),
+            metafields_normalized=metafields_normalized,
+            selected_option_values=selected_option_values,
         )
-        option_colour_values: List[str] = []
-        for values in selected_option_values.items():
-            option_name, option_list = values
-            if option_name.lower() in {"color", "colour", "color pattern"}:
-                option_colour_values.extend(option_list)
-
-        official_colour = _first_non_empty(
-            [
-                "; ".join(color_labels),
-                "; ".join(option_colour_values),
-                metafields_normalized["sibling_color"].get("value"),
-            ]
-        )
-        colour_source = None
-        if color_labels:
-            colour_source = "shopify.color-pattern"
-        elif option_colour_values:
-            colour_source = "variant.selectedOptions"
-        elif metafields_normalized["sibling_color"].get("value"):
-            colour_source = "custom.sibling_color"
-
-        official_product_attributes = {
-            "official_fabric_composition": exact_composition or "Unknown",
-            "official_fabric_source": exact_source,
-            "official_fabric_confidence": "high" if exact_composition else "none",
-            "official_material_text": materials_text or None,
-            "official_fabric_family": fabric_family,
-            "official_colour": official_colour,
-            "official_colour_source": colour_source,
-            "official_fit": "; ".join(fit_labels) or None,
-            "official_neckline": "; ".join(neckline_labels) or None,
-            "official_sleeve_length": "; ".join(sleeve_labels) or None,
-            "official_clothing_features": "; ".join(feature_labels) or None,
-            "official_collection_name": "; ".join(collection_labels) or None,
-            "official_product_features": metafields_normalized["product_features"].get("text") or None,
-            "official_product_size": metafields_normalized["product_size"].get("text") or None,
-            "origin_country": metafields_normalized["origin_country"].get("value"),
-        }
 
         return {
             "id": product_id,
@@ -747,6 +1024,115 @@ class ShopifyGraphQLClient:
             "metafields_normalized": metafields_normalized,
             "official_product_attributes": official_product_attributes,
         }
+
+    @staticmethod
+    def refresh_official_product_attributes(
+        product_detail: Dict[str, Any],
+        *,
+        selected_variant_options: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Recompute official product attributes for a row-specific variant context."""
+        if not product_detail:
+            return
+        existing_attributes = dict(product_detail.get("official_product_attributes") or {})
+        refreshed_attributes = _derive_official_product_attributes(
+            title=product_detail.get("title"),
+            description_text=product_detail.get("description_text") or "",
+            tags=list(product_detail.get("tags") or []),
+            metafields_normalized=product_detail.get("metafields_normalized") or {},
+            selected_option_values=product_detail.get("selected_option_values") or {},
+            selected_variant_options=selected_variant_options,
+        )
+        merged_attributes = dict(existing_attributes)
+        for key, value in refreshed_attributes.items():
+            if value not in [None, "", "Unknown"]:
+                merged_attributes[key] = value
+            elif key not in merged_attributes:
+                merged_attributes[key] = value
+        product_detail["official_product_attributes"] = merged_attributes
+
+    @staticmethod
+    def _product_metaobject_metafields(product_node: Dict[str, Any]) -> List[Optional[Dict[str, Any]]]:
+        """Return the product metafields that can hold metaobject references."""
+        return [
+            product_node.get("fabric"),
+            product_node.get("colorPattern"),
+            product_node.get("fit"),
+            product_node.get("neckline"),
+            product_node.get("sleeveLengthType"),
+            product_node.get("clothingFeatures"),
+            product_node.get("collectionName"),
+        ]
+
+    @classmethod
+    def _collect_unresolved_metaobject_gids(cls, product_nodes: List[Dict[str, Any]]) -> List[str]:
+        """Find metaobject GIDs that were referenced by value but not returned inline."""
+        unresolved: List[str] = []
+        for product_node in product_nodes:
+            if not isinstance(product_node, dict) or product_node.get("__typename") != "Product":
+                continue
+            for metafield in cls._product_metaobject_metafields(product_node):
+                if not metafield:
+                    continue
+                raw_gids = _extract_metaobject_gids(metafield.get("value"))
+                if not raw_gids:
+                    continue
+                inline_nodes = _connection_nodes(metafield.get("references") or {})
+                reference = metafield.get("reference")
+                if isinstance(reference, dict):
+                    inline_nodes.append(reference)
+                inline_ids = {
+                    node.get("id")
+                    for node in inline_nodes
+                    if isinstance(node, dict) and node.get("id")
+                }
+                for gid in raw_gids:
+                    if gid not in inline_ids and gid not in unresolved:
+                        unresolved.append(gid)
+        return unresolved
+
+    def _fetch_metaobjects_by_ids(
+        self,
+        metaobject_gids: List[str],
+        batch_size: int = 100,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Fetch Metaobject nodes by ID for unresolved metafield fallbacks."""
+        unique_ids: List[str] = []
+        seen = set()
+        for gid in metaobject_gids:
+            if not gid or gid in seen:
+                continue
+            seen.add(gid)
+            unique_ids.append(gid)
+
+        if not unique_ids:
+            return {}
+
+        graphql_query = """
+        query MetaobjectsByIds($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            __typename
+            ... on Metaobject {
+              id
+              displayName
+              fields {
+                key
+                value
+              }
+            }
+          }
+        }
+        """
+
+        records: Dict[str, Dict[str, Any]] = {}
+        for start in range(0, len(unique_ids), max(1, min(batch_size, 250))):
+            batch = unique_ids[start:start + max(1, min(batch_size, 250))]
+            result = self.query(graphql_query, variables={"ids": batch})
+            for node in result.get("data", {}).get("nodes", []):
+                if not node or node.get("__typename") != "Metaobject" or not node.get("id"):
+                    continue
+                records[node["id"]] = node
+        return records
 
     def fetch_product_detail_records_by_ids(
         self,
@@ -813,6 +1199,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -825,6 +1212,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -837,6 +1225,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -849,6 +1238,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -861,6 +1251,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -873,6 +1264,7 @@ class ShopifyGraphQLClient:
                 references(first: 10) {
                   nodes {
                     ... on Metaobject {
+                      id
                       displayName
                       fields { key value }
                     }
@@ -911,6 +1303,7 @@ class ShopifyGraphQLClient:
                 value
                 reference {
                   ... on Metaobject {
+                    id
                     displayName
                     fields { key value }
                   }
@@ -944,10 +1337,16 @@ class ShopifyGraphQLClient:
             batch = unique_ids[start:start + batch_size]
             result = self.query(graphql_query, variables={"ids": batch})
             nodes = result.get("data", {}).get("nodes", [])
+            resolved_metaobjects = self._fetch_metaobjects_by_ids(
+                self._collect_unresolved_metaobject_gids(nodes)
+            )
             for node in nodes:
                 if not node or node.get("__typename") != "Product":
                     continue
-                record = self._normalize_product_detail_record(node)
+                record = self._normalize_product_detail_record(
+                    node,
+                    resolved_metaobjects=resolved_metaobjects,
+                )
                 if record:
                     records[record["id"]] = record
 

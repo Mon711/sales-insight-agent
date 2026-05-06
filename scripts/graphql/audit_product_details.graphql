@@ -1,0 +1,204 @@
+query AuditProductDetails($id: ID!) {
+  product(id: $id) {
+    id
+    title
+    descriptionHtml
+    handle
+    productType
+    vendor
+    tags
+    status
+
+    options {
+      id
+      name
+      position
+      values
+    }
+
+    collections(first: 20) {
+      edges {
+        node {
+          id
+          title
+        }
+      }
+    }
+
+    media(first: 20) {
+      edges {
+        node {
+          ... on MediaImage {
+            id
+            image {
+              url
+              altText
+              width
+              height
+            }
+          }
+        }
+      }
+    }
+
+    fabric: metafield(namespace: "shopify", key: "fabric") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    colorPattern: metafield(namespace: "shopify", key: "color-pattern") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    fit: metafield(namespace: "shopify", key: "fit") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    neckline: metafield(namespace: "shopify", key: "neckline") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    sleeveLengthType: metafield(namespace: "shopify", key: "sleeve-length-type") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    clothingFeatures: metafield(namespace: "shopify", key: "clothing-features") {
+      value
+      references(first: 20) {
+        nodes {
+          ... on Metaobject {
+            id
+            displayName
+            fields {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+
+    materials: metafield(namespace: "custom", key: "materials") {
+      value
+      type
+    }
+
+    productSize: metafield(namespace: "custom", key: "product_size") {
+      value
+      type
+    }
+
+    productFeatures: metafield(namespace: "custom", key: "product_features") {
+      value
+      type
+    }
+
+    originCountry: metafield(namespace: "custom", key: "origin_country") {
+      value
+    }
+
+    siblings: metafield(namespace: "custom", key: "siblings") {
+      value
+    }
+
+    siblingColor: metafield(namespace: "custom", key: "sibling_color") {
+      value
+    }
+
+    collectionName: metafield(namespace: "custom", key: "collection_name") {
+      value
+      reference {
+        ... on Metaobject {
+          id
+          displayName
+          fields {
+            key
+            value
+          }
+        }
+      }
+    }
+
+    variants(first: 50) {
+      edges {
+        node {
+          id
+          title
+          sku
+          price
+          compareAtPrice
+          barcode
+          availableForSale
+          inventoryQuantity
+          selectedOptions {
+            name
+            value
+          }
+          image {
+            url
+            altText
+          }
+        }
+      }
+    }
+  }
+}

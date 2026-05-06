@@ -148,7 +148,7 @@ mkdir -p "$report_assets_dir"
 run_reports_log="$output_dir/run_season_reports.log"
 codex_log="$output_dir/codex_generation.log"
 package_log="$output_dir/report_packaging.log"
-codex_model="${MODEL:-gpt-5.4}"
+codex_model="${MODEL:-gpt-5.5}"
 codex_reasoning_effort="${REASONING_EFFORT:-medium}"
 
 fetch_season_report() {

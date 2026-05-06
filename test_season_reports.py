@@ -154,17 +154,17 @@ class TestSeasonReports(unittest.TestCase):
     def test_product_detail_normalization_parses_official_fields(self):
         rich_text = (
             '{"type":"root","children":[{"type":"paragraph","children":['
-            '{"type":"text","value":"Shell: 55% Linen, 45% Cotton"}]}]}'
+            '{"type":"text","value":"Shell: 55% Linen, 45% Cotton Care: Cold hand wash recommended Country of Origin: India"}]}]}'
         )
         node = {
             "__typename": "Product",
             "id": "gid://shopify/Product/101",
-            "title": "Arden Dress",
+            "title": "Arden Dress - Ivory",
             "descriptionHtml": "<p>Care: Dry clean only.</p>",
             "handle": "arden-dress",
             "productType": "Dress",
             "vendor": "Steele",
-            "tags": ["Winter25"],
+            "tags": ["Winter25", "Colour_Blue Polka"],
             "status": "ACTIVE",
             "options": [
                 {"id": "opt1", "name": "Color", "position": 1, "values": ["Ivory"]},
@@ -227,11 +227,21 @@ class TestSeasonReports(unittest.TestCase):
         record = ShopifyGraphQLClient._normalize_product_detail_record(node)
 
         self.assertEqual(record["description_text"], "Care: Dry clean only.")
-        self.assertEqual(record["metafields_normalized"]["materials"]["text"], "Shell: 55% Linen, 45% Cotton")
+        self.assertEqual(
+            record["metafields_normalized"]["materials"]["text"],
+            "Shell: 55% Linen, 45% Cotton Care: Cold hand wash recommended Country of Origin: India",
+        )
         attrs = record["official_product_attributes"]
         self.assertEqual(attrs["official_fabric_composition"], "Shell: 55% Linen, 45% Cotton")
         self.assertEqual(attrs["official_fabric_source"], "custom.materials")
+        self.assertEqual(
+            attrs["official_material_text"],
+            "Shell: 55% Linen, 45% Cotton Care: Cold hand wash recommended Country of Origin: India",
+        )
+        self.assertEqual(attrs["care_instructions"], "Cold hand wash recommended")
+        self.assertEqual(attrs["origin_country"], "India")
         self.assertEqual(attrs["official_colour"], "Ivory")
+        self.assertEqual(attrs["official_colour_source"], "variant.selectedOptions")
         self.assertEqual(attrs["official_fit"], "Relaxed")
         self.assertEqual(attrs["official_collection_name"], "Winter Capsule")
         self.assertEqual(record["variants"][0]["colour"], "Ivory")
@@ -258,6 +268,107 @@ class TestSeasonReports(unittest.TestCase):
         self.assertEqual(attrs["official_fabric_confidence"], "none")
         self.assertIn("cotton", attrs["official_fabric_family"])
         self.assertEqual(attrs["official_material_text"], "Cotton blend")
+
+    def test_metaobject_fallback_resolves_raw_gid_values(self):
+        node = {
+            "__typename": "Product",
+            "id": "gid://shopify/Product/202",
+            "title": "Gabrielle Dress",
+            "descriptionHtml": "",
+            "tags": [],
+            "variants": {"edges": []},
+            "fabric": {"value": "[\"gid://shopify/Metaobject/11\"]", "references": {"nodes": []}},
+            "colorPattern": {"value": "[\"gid://shopify/Metaobject/12\"]", "references": {"nodes": []}},
+            "fit": {"value": "[\"gid://shopify/Metaobject/13\"]", "references": {"nodes": []}},
+            "neckline": {"value": "[\"gid://shopify/Metaobject/14\"]", "references": {"nodes": []}},
+            "sleeveLengthType": {"value": "[\"gid://shopify/Metaobject/15\"]", "references": {"nodes": []}},
+            "clothingFeatures": {"value": "[\"gid://shopify/Metaobject/16\"]", "references": {"nodes": []}},
+            "collectionName": {"value": "gid://shopify/Metaobject/17", "reference": None},
+        }
+        resolved = {
+            "gid://shopify/Metaobject/11": {"id": "gid://shopify/Metaobject/11", "displayName": "Cotton", "fields": []},
+            "gid://shopify/Metaobject/12": {"id": "gid://shopify/Metaobject/12", "displayName": "Blue Polka", "fields": []},
+            "gid://shopify/Metaobject/13": {"id": "gid://shopify/Metaobject/13", "displayName": "Relaxed", "fields": []},
+            "gid://shopify/Metaobject/14": {"id": "gid://shopify/Metaobject/14", "displayName": "Square Neck", "fields": []},
+            "gid://shopify/Metaobject/15": {"id": "gid://shopify/Metaobject/15", "displayName": "Sleeveless", "fields": []},
+            "gid://shopify/Metaobject/16": {"id": "gid://shopify/Metaobject/16", "displayName": "Pockets", "fields": []},
+            "gid://shopify/Metaobject/17": {"id": "gid://shopify/Metaobject/17", "displayName": "Holiday Capsule", "fields": []},
+        }
+
+        record = ShopifyGraphQLClient._normalize_product_detail_record(node, resolved_metaobjects=resolved)
+        attrs = record["official_product_attributes"]
+
+        self.assertEqual(record["metafields_normalized"]["fabric"]["labels"], ["Cotton"])
+        self.assertEqual(record["metafields_normalized"]["color_pattern"]["labels"], ["Blue Polka"])
+        self.assertEqual(record["metafields_normalized"]["collection_name"]["labels"], ["Holiday Capsule"])
+        self.assertEqual(attrs["official_fabric_family"], "cotton")
+        self.assertEqual(attrs["official_colour"], "Blue Polka")
+        self.assertEqual(attrs["official_colour_source"], "shopify.color-pattern")
+        self.assertEqual(attrs["official_fit"], "Relaxed")
+        self.assertEqual(attrs["official_neckline"], "Square Neck")
+        self.assertEqual(attrs["official_sleeve_length"], "Sleeveless")
+        self.assertEqual(attrs["official_clothing_features"], "Pockets")
+        self.assertEqual(attrs["official_collection_name"], "Holiday Capsule")
+
+    def test_row_level_colour_prefers_selected_variant_before_tags_title_and_metaobject(self):
+        node = {
+            "__typename": "Product",
+            "id": "gid://shopify/Product/303",
+            "title": "Jemma Dress - Blue Polka",
+            "descriptionHtml": "",
+            "handle": "jemma-dress",
+            "productType": "Dress",
+            "vendor": "Steele",
+            "tags": ["color_Green Meadow"],
+            "status": "ACTIVE",
+            "options": [{"id": "opt1", "name": "Color", "position": 1, "values": ["Red Floral", "Blue Polka"]}],
+            "collections": {"edges": []},
+            "media": {"edges": []},
+            "fabric": None,
+            "colorPattern": {"value": "[\"gid://shopify/Metaobject/22\"]", "references": {"nodes": [{"id": "gid://shopify/Metaobject/22", "displayName": "Yellow Dot", "fields": []}]}},
+            "fit": None,
+            "neckline": None,
+            "sleeveLengthType": None,
+            "clothingFeatures": None,
+            "materials": None,
+            "productSize": None,
+            "productFeatures": None,
+            "originCountry": None,
+            "siblings": None,
+            "siblingColor": None,
+            "collectionName": None,
+            "variants": {
+                "edges": [
+                    {
+                        "node": {
+                            "id": "gid://shopify/ProductVariant/401",
+                            "title": "Red Floral / S",
+                            "sku": "JEM-RED-S",
+                            "price": "120.00",
+                            "compareAtPrice": None,
+                            "barcode": None,
+                            "availableForSale": True,
+                            "inventoryQuantity": 2,
+                            "selectedOptions": [
+                                {"name": "Color", "value": "Red Floral"},
+                                {"name": "Size", "value": "S"},
+                            ],
+                            "image": None,
+                        }
+                    }
+                ]
+            },
+        }
+
+        record = ShopifyGraphQLClient._normalize_product_detail_record(node)
+        ShopifyGraphQLClient.refresh_official_product_attributes(
+            record,
+            selected_variant_options=record["variants"][0]["selected_options"],
+        )
+        attrs = record["official_product_attributes"]
+
+        self.assertEqual(attrs["official_colour"], "Red Floral")
+        self.assertEqual(attrs["official_colour_source"], "variant.selectedOptions")
 
     def test_rich_text_plain_text_parser_handles_shopify_json(self):
         value = (
@@ -324,6 +435,8 @@ class TestSeasonReports(unittest.TestCase):
         detail = result["season_product_performance"]["rows"][0]["product_detail"]
         self.assertEqual(detail["official_product_attributes"]["official_fabric_composition"], "100% Cotton")
         self.assertEqual(detail["selected_option_values"], {"Color": "Ivory", "Size": "S"})
+        self.assertEqual(detail["official_product_attributes"]["official_colour"], "Ivory")
+        self.assertEqual(detail["official_product_attributes"]["official_colour_source"], "variant.selectedOptions")
         summary = result["product_detail_enrichment_summary"]
         self.assertEqual(summary["product_ids_seen"], 1)
         self.assertEqual(summary["product_details_found"], 1)

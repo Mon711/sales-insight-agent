@@ -236,6 +236,10 @@ def _attach_product_detail_to_rows(
             if matching_variant:
                 row_detail["selected_option_values"] = matching_variant.get("selected_options") or {}
                 row_detail["selected_variant"] = matching_variant
+                ShopifyGraphQLClient.refresh_official_product_attributes(
+                    row_detail,
+                    selected_variant_options=matching_variant.get("selected_options") or {},
+                )
             row["product_detail"] = row_detail
 
     for record in records.values():
